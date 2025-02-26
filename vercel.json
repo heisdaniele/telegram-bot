@@ -4,20 +4,26 @@
     {
       "src": "redirect-server.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "bot.js",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
     {
+      "src": "/webhook",
+      "dest": "bot.js"
+    },
+    {
       "src": "/(.*)",
-      "dest": "/redirect-server.js"
+      "dest": "redirect-server.js"
     }
   ],
-  "env": {
-    "BOT_TOKEN": "@bot_token",
-    "SUPABASE_URL": "@supabase_url",
-    "SUPABASE_KEY": "@supabase_key",
-    "SUPABASE_SERVICE_ROLE_KEY": "@supabase_service_role_key",
-    "IPINFO_TOKEN": "@ipinfo_token",
-    "DOMAIN": "@domain"
-  }
+  "regions": ["sin1"],
+  "github": {
+    "silent": true,
+    "autoAlias": true
+  },
+  "alias": ["midget.pro"]
 }

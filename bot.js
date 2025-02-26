@@ -15,6 +15,10 @@ if (!BOT_TOKEN) {
     throw new Error('BOT_TOKEN is missing in .env file');
 }
 
+const BOT_URL = process.env.NODE_ENV === 'production' 
+  ? `https://${process.env.DOMAIN}`
+  : 'http://localhost:3000';
+
 // Bot initialization
 async function startBot() {
     try {
