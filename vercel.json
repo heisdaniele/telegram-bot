@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "redirect-server.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/redirect-server.js"
+    }
+  ],
+  "env": {
+    "BOT_TOKEN": "@bot_token",
+    "SUPABASE_URL": "@supabase_url",
+    "SUPABASE_KEY": "@supabase_key",
+    "SUPABASE_SERVICE_ROLE_KEY": "@supabase_service_role_key",
+    "IPINFO_TOKEN": "@ipinfo_token",
+    "DOMAIN": "@domain"
+  }
+}
