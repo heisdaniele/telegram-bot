@@ -21,45 +21,6 @@ app.get('/health', (_, res) => {
     res.status(200).json({ status: 'ok' });
 });
 
-// Root route handler
-app.get('/', (req, res) => {
-    res.send(`
-        <html>
-            <head>
-                <title>URL Shortener Bot</title>
-                <style>
-                    body {
-                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                        max-width: 800px;
-                        margin: 40px auto;
-                        padding: 0 20px;
-                        line-height: 1.6;
-                    }
-                    .container {
-                        text-align: center;
-                    }
-                    .button {
-                        display: inline-block;
-                        padding: 12px 24px;
-                        background-color: #0088cc;
-                        color: white;
-                        text-decoration: none;
-                        border-radius: 6px;
-                        margin-top: 20px;
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <h1>URL Shortener Bot</h1>
-                    <p>A Telegram bot for creating and tracking shortened URLs.</p>
-                    <a href="https://t.me/midget_url_bot" class="button">Open in Telegram</a>
-                </div>
-            </body>
-        </html>
-    `);
-});
-
 // URL redirection endpoint
 app.get('/:shortAlias', async (req, res) => {
     try {

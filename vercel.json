@@ -16,10 +16,6 @@
       "dest": "bot.js"
     },
     {
-      "src": "/",
-      "dest": "redirect-server.js"
-    },
-    {
       "src": "/(.*)",
       "dest": "redirect-server.js"
     }
