@@ -24,6 +24,5 @@
   "github": {
     "silent": true,
     "autoAlias": true
-  },
-  "alias": ["midget.pro"]
+  }
 }

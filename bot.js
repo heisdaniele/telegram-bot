@@ -16,7 +16,7 @@ if (!BOT_TOKEN) {
 }
 
 const BOT_URL = process.env.NODE_ENV === 'production' 
-  ? `https://${process.env.DOMAIN}`
+  ? 'https://telegram-bot-six-theta.vercel.app'
   : 'http://localhost:3000';
 
 // Bot initialization
