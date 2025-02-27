@@ -2,22 +2,22 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/index.js",
+      "src": "redirect-server.js",
       "use": "@vercel/node"
     },
     {
-      "src": "api/webhook.js",
+      "src": "bot.js",
       "use": "@vercel/node"
     }
   ],
   "routes": [
     {
       "src": "/webhook",
-      "dest": "/api/webhook.js"
+      "dest": "bot.js"
     },
     {
       "src": "/(.*)",
-      "dest": "/api/index.js"
+      "dest": "redirect-server.js"
     }
   ],
   "regions": ["sin1"],

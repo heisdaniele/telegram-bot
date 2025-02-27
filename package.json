@@ -5,7 +5,9 @@
   "scripts": {
     "start": "node bot.js",
     "redirect": "node redirect-server.js",
-    "dev": "nodemon bot.js"
+    "dev": "nodemon bot.js",
+    "setup-webhook": "node scripts/setup-webhook.js",
+    "check-webhook": "node scripts/check-webhook.js"
   },
   "keywords": [
     "telegram",
