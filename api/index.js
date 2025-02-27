@@ -3,9 +3,20 @@ const cors = require('cors');
 const { supabase } = require('../supabaseClient');
 const { trackClick } = require('../features/track');
 
+// Add timeout middleware
+const timeout = (seconds) => {
+    return (req, res, next) => {
+        res.setTimeout(seconds * 1000, () => {
+            res.status(408).send('Request timeout');
+        });
+        next();
+    };
+};
+
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use(timeout(30)); // 30 second timeout
 
 // Root route handler
 app.get('/', (req, res) => {
@@ -67,33 +78,59 @@ app.get('/', (req, res) => {
     `);
 });
 
-// URL redirection handler
-app.get('/:shortAlias', async (req, res) => {
+// URL redirection handler with improved error handling
+app.get('/:shortAlias', async (req, res, next) => {
     try {
         const { shortAlias } = req.params;
         console.log('Looking up shortAlias:', shortAlias);
         
-        const { data, error } = await supabase
-            .from('tg_shortened_urls')
-            .select('*')
-            .eq('short_alias', shortAlias)
-            .single();
+        const { data, error } = await Promise.race([
+            supabase
+                .from('tg_shortened_urls')
+                .select('*')
+                .eq('short_alias', shortAlias)
+                .single(),
+            new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Database timeout')), 5000)
+            )
+        ]);
 
-        if (error || !data) {
-            console.error('URL lookup failed:', error);
-            return res.status(404).send('Link not found');
-        }
+        if (error) throw error;
+        if (!data) return res.status(404).send('Link not found');
 
-        // Track click asynchronously
-        trackClick(req, data).catch(console.error);
+        // Track click asynchronously with error handling
+        trackClick(req, data).catch(err => {
+            console.error('Click tracking error:', err);
+            // Don't block the redirect for tracking errors
+        });
 
-        // Redirect to original URL
         res.redirect(301, data.original_url);
 
     } catch (error) {
-        console.error('Redirect error:', error);
-        res.status(500).send('Server error');
+        next(error);
     }
+});
+
+// Add error handling middleware
+app.use((err, req, res, next) => {
+    console.error('Error:', err);
+    res.status(500).send(`
+        <html>
+            <head>
+                <title>Error - Midget URL Shortener</title>
+                <style>
+                    body { font-family: system-ui; max-width: 600px; margin: 40px auto; padding: 20px; text-align: center; }
+                    .error { color: #dc3545; margin: 20px 0; }
+                    .button { display: inline-block; padding: 10px 20px; background: #0088cc; color: white; text-decoration: none; border-radius: 4px; }
+                </style>
+            </head>
+            <body>
+                <h1>⚠️ Oops! Something went wrong</h1>
+                <p class="error">The service is temporarily unavailable. Please try again later.</p>
+                <a href="/" class="button">Go Back</a>
+            </body>
+        </html>
+    `);
 });
 
 module.exports = app;

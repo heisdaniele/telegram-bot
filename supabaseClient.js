@@ -15,28 +15,25 @@ if (!supabaseUrl || !supabaseKey || !serviceRoleKey) {
     throw new Error('Missing Supabase credentials in .env file');
 }
 
-// Regular client for authenticated operations
-const supabase = createClient(supabaseUrl, supabaseKey, {
-    auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false
-    },
-    global: {
-        headers: {
-            'x-my-custom-header': 'telegram-bot'
-        }
-    }
-});
+const options = {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: false,
+    detectSessionInUrl: false
+  },
+  global: {
+    headers: { 'x-my-custom-header': 'my-app-name' },
+  },
+  db: {
+    schema: 'public'
+  },
+  realtime: {
+    timeout: 20000 // 20 seconds
+  }
+};
 
-// Service role client for admin operations
-const serviceRole = createClient(supabaseUrl, serviceRoleKey);
-
-// Set auth to use service role
-supabase.auth.setSession({
-    access_token: supabaseKey,
-    refresh_token: supabaseKey
-});
+const supabase = createClient(supabaseUrl, supabaseKey, options);
+const serviceRole = createClient(supabaseUrl, serviceRoleKey, options);
 
 async function testConnection() {
     try {
