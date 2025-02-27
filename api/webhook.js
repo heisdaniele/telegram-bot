@@ -1,39 +1,28 @@
 const TelegramBot = require('node-telegram-bot-api');
 require('dotenv').config();
 
-// Initialize bot without polling
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: false });
 
 module.exports = async (req, res) => {
     try {
-        // Validate request
         if (req.method !== 'POST') {
             return res.status(405).json({ error: 'Method not allowed' });
         }
 
         const update = req.body;
-        
-        // Validate update format
-        if (!update || !update.message || !update.message.chat || !update.message.chat.id) {
-            return res.status(400).json({ 
-                error: 'Invalid update format',
-                required: 'message.chat.id is required'
-            });
+        console.log('Received update:', JSON.stringify(update, null, 2));
+
+        if (!update || !update.message || !update.message.chat) {
+            return res.status(400).json({ error: 'Invalid update format' });
         }
 
         const msg = update.message;
         const chatId = msg.chat.id;
+        const text = msg.text;
 
-        // Log incoming message for debugging
-        console.log('Received message:', {
-            chatId,
-            text: msg.text,
-            from: msg.from
-        });
-
-        try {
-            // Handle commands
-            if (msg.text === '/start') {
+        // Handle both commands and keyboard buttons
+        switch(text) {
+            case '/start':
                 await bot.sendMessage(chatId,
                     '👋 *Welcome to URL Shortener Bot!*\n\n' +
                     'Choose an option:',
@@ -49,23 +38,74 @@ module.exports = async (req, res) => {
                         }
                     }
                 );
-            }
+                break;
 
-            return res.status(200).json({ ok: true });
+            case '🔗 Quick Shorten':
+                await bot.sendMessage(chatId,
+                    '📝 *Send me the URL to shorten:*',
+                    { parse_mode: 'Markdown' }
+                );
+                break;
 
-        } catch (botError) {
-            console.error('Bot error:', botError);
-            return res.status(500).json({ 
-                error: 'Bot error',
-                details: botError.message
-            });
+            case '📚 Bulk Shorten':
+                await bot.sendMessage(chatId,
+                    '📝 *Send me multiple URLs* (one per line):',
+                    { parse_mode: 'Markdown' }
+                );
+                break;
+
+            case '🎯 Custom Alias':
+                await bot.sendMessage(chatId,
+                    '📝 *Send me the URL and your desired alias*\n' +
+                    'Format: `URL ALIAS`\n' +
+                    'Example: `https://example.com mylink`',
+                    { parse_mode: 'Markdown' }
+                );
+                break;
+
+            case '📊 Track URL':
+                await bot.sendMessage(chatId,
+                    '*URL Tracking*\n\n' +
+                    'Send the command `/track` followed by the alias to see stats:\n' +
+                    'Example: `/track mylink`',
+                    { parse_mode: 'Markdown' }
+                );
+                break;
+
+            case '📋 My URLs':
+                await bot.sendMessage(chatId,
+                    'Use `/urls` command to see your shortened URLs.',
+                    { parse_mode: 'Markdown' }
+                );
+                break;
+
+            case 'ℹ️ Help':
+                await bot.sendMessage(chatId,
+                    '*Available Commands:*\n\n' +
+                    '🔗 Quick Shorten - Simple URL shortening\n' +
+                    '📚 Bulk Shorten - Multiple URLs at once\n' +
+                    '🎯 Custom Alias - Choose your own alias\n' +
+                    '📊 /track - View URL statistics\n' +
+                    '📋 /urls - List your shortened URLs',
+                    { parse_mode: 'Markdown' }
+                );
+                break;
+
+            default:
+                // Handle URL inputs here
+                await bot.sendMessage(chatId,
+                    'Please use the keyboard buttons or commands.',
+                    { parse_mode: 'Markdown' }
+                );
         }
+
+        return res.status(200).json({ ok: true });
 
     } catch (error) {
         console.error('Webhook error:', error);
         return res.status(500).json({ 
             error: 'Internal server error',
-            details: error.message
+            details: error.message 
         });
     }
 };
