@@ -25,22 +25,61 @@ async function startBot() {
         // Test database connection before starting
         await testConnection();
         
-        // Initialize bot
-        const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+        // Initialize bot without polling in production
+        const bot = new TelegramBot(BOT_TOKEN, {
+            polling: process.env.NODE_ENV !== 'production'
+        });
         console.log('🤖 Bot is running...');
 
-        // Set webhook
-        await bot.setWebHook(`${BOT_URL}`);
+        // Set webhook only in production
+        if (process.env.NODE_ENV === 'production') {
+            await bot.setWebHook(BOT_URL);
+            console.log('✓ Webhook set to:', BOT_URL);
+        }
 
         // Error handling
         bot.on('polling_error', (error) => {
             console.error('Polling error:', error);
         });
 
+        // Handle URL shortening
+        async function handleUrlShortening(msg) {
+            const chatId = msg.chat.id;
+            const url = msg.text;
+
+            if (!isValidUrl(url)) {
+                await bot.sendMessage(chatId,
+                    '❌ Please send a valid URL.',
+                    { parse_mode: 'Markdown' }
+                );
+                return;
+            }
+
+            try {
+                // Your URL shortening logic here
+                const shortUrl = await defaultFeature.handleDefaultShorten(bot, msg);
+                defaultFeature.setUserState(chatId, null);
+            } catch (error) {
+                console.error('URL shortening error:', error);
+                await bot.sendMessage(chatId,
+                    '❌ Failed to shorten URL. Please try again.',
+                    { parse_mode: 'Markdown' }
+                );
+            }
+        }
+
         // Handle keyboard commands
         bot.on('message', async (msg) => {
             try {
                 const chatId = msg.chat.id;
+                const text = msg.text;
+
+                // Handle states
+                const userState = defaultFeature.getUserState(chatId);
+                if (userState === 'WAITING_FOR_URL') {
+                    await handleUrlShortening(msg);
+                    return;
+                }
 
                 // Handle /track and /urls commands
                 if (msg.text?.startsWith('/track')) {
@@ -209,6 +248,16 @@ ${Object.entries(stats.locations)
     } catch (error) {
         console.error('Failed to start bot:', error);
         process.exit(1);
+    }
+}
+
+// Helper function to validate URLs
+function isValidUrl(string) {
+    try {
+        new URL(string);
+        return true;
+    } catch (_) {
+        return false;
     }
 }
 

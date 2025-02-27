@@ -1,5 +1,6 @@
 const TelegramBot = require('node-telegram-bot-api');
 require('dotenv').config();
+const defaultFeature = require('../features/default');
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: false });
 
@@ -19,6 +20,18 @@ module.exports = async (req, res) => {
         const msg = update.message;
         const chatId = msg.chat.id;
         const text = msg.text;
+
+        // Handle URL shortening state
+        const userState = defaultFeature.getUserState(chatId);
+        if (userState === 'WAITING_FOR_URL') {
+            try {
+                await defaultFeature.handleDefaultShorten(bot, msg);
+                defaultFeature.setUserState(chatId, null);
+            } catch (error) {
+                await bot.sendMessage(chatId, '❌ Failed to shorten URL');
+            }
+            return res.status(200).json({ ok: true });
+        }
 
         // Handle both commands and keyboard buttons
         switch(text) {
@@ -45,6 +58,7 @@ module.exports = async (req, res) => {
                     '📝 *Send me the URL to shorten:*',
                     { parse_mode: 'Markdown' }
                 );
+                defaultFeature.setUserState(chatId, 'WAITING_FOR_URL');
                 break;
 
             case '📚 Bulk Shorten':
