@@ -2,24 +2,29 @@
   "version": 2,
   "builds": [
     {
-      "src": "redirect-server.js",
-      "use": "@vercel/node"
-    },
-    {
-      "src": "bot.js",
+      "src": "api/**/*.js",
       "use": "@vercel/node"
     }
   ],
   "routes": [
     {
       "src": "/webhook",
-      "dest": "bot.js"
+      "dest": "/api/webhook.js",
+      "methods": ["POST"]
+    },
+    {
+      "src": "/health",
+      "dest": "/api/health.js",
+      "methods": ["GET"]
     },
     {
       "src": "/(.*)",
-      "dest": "redirect-server.js"
+      "dest": "/api/redirect.js"
     }
   ],
+  "env": {
+    "NODE_ENV": "production"
+  },
   "regions": ["sin1"],
   "github": {
     "silent": true,
