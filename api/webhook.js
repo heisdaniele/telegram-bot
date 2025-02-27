@@ -1,11 +1,9 @@
 const TelegramBot = require('node-telegram-bot-api');
-const { supabase } = require('../supabaseClient');
 require('dotenv').config();
 
 // Initialize bot without polling
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: false });
 
-// Handler for serverless environment
 module.exports = async (req, res) => {
     try {
         // Validate request
@@ -14,18 +12,28 @@ module.exports = async (req, res) => {
         }
 
         const update = req.body;
-        console.log('Received update:', JSON.stringify(update, null, 2));
-
-        if (!update || !update.message) {
-            return res.status(400).json({ error: 'Invalid update format' });
+        
+        // Validate update format
+        if (!update || !update.message || !update.message.chat || !update.message.chat.id) {
+            return res.status(400).json({ 
+                error: 'Invalid update format',
+                required: 'message.chat.id is required'
+            });
         }
 
         const msg = update.message;
         const chatId = msg.chat.id;
 
-        // Handle commands
-        switch(msg.text) {
-            case '/start':
+        // Log incoming message for debugging
+        console.log('Received message:', {
+            chatId,
+            text: msg.text,
+            from: msg.from
+        });
+
+        try {
+            // Handle commands
+            if (msg.text === '/start') {
                 await bot.sendMessage(chatId,
                     '👋 *Welcome to URL Shortener Bot!*\n\n' +
                     'Choose an option:',
@@ -41,25 +49,17 @@ module.exports = async (req, res) => {
                         }
                     }
                 );
-                break;
+            }
 
-            case 'ℹ️ Help':
-                await bot.sendMessage(chatId,
-                    '*Available Commands:*\n\n' +
-                    '🔗 Quick Shorten - Simple URL shortening\n' +
-                    '📚 Bulk Shorten - Multiple URLs at once\n' +
-                    '🎯 Custom Alias - Choose your own alias\n' +
-                    '📊 /track - View URL statistics\n' +
-                    '📋 /urls - List your shortened URLs',
-                    { parse_mode: 'Markdown' }
-                );
-                break;
+            return res.status(200).json({ ok: true });
 
-            default:
-                await bot.sendMessage(chatId, 'Please use the keyboard buttons or commands.');
+        } catch (botError) {
+            console.error('Bot error:', botError);
+            return res.status(500).json({ 
+                error: 'Bot error',
+                details: botError.message
+            });
         }
-
-        return res.status(200).json({ ok: true });
 
     } catch (error) {
         console.error('Webhook error:', error);
