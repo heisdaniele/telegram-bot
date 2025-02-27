@@ -16,8 +16,8 @@ if (!BOT_TOKEN) {
 }
 
 const BOT_URL = process.env.NODE_ENV === 'production' 
-  ? 'https://telegram-bot-six-theta.vercel.app'
-  : 'http://localhost:3000';
+  ? `https://telegram-bot-six-theta.vercel.app/webhook`
+  : 'http://localhost:3000/webhook';
 
 // Bot initialization
 async function startBot() {
@@ -28,6 +28,9 @@ async function startBot() {
         // Initialize bot
         const bot = new TelegramBot(BOT_TOKEN, { polling: true });
         console.log('🤖 Bot is running...');
+
+        // Set webhook
+        await bot.setWebHook(`${BOT_URL}`);
 
         // Error handling
         bot.on('polling_error', (error) => {

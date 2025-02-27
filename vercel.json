@@ -6,18 +6,18 @@
       "use": "@vercel/node"
     },
     {
-      "src": "bot.js",
+      "src": "api/webhook.js",
       "use": "@vercel/node"
     }
   ],
   "routes": [
     {
       "src": "/webhook",
-      "dest": "bot.js"
+      "dest": "/api/webhook.js"
     },
     {
       "src": "/(.*)",
-      "dest": "redirect-server.js"
+      "dest": "/redirect-server.js"
     }
   ],
   "regions": ["sin1"],
