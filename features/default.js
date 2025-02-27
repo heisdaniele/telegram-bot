@@ -10,10 +10,11 @@ const PROTOCOL = 'https';  // Required for Telegram inline buttons
 // User state management (optional)
 const userStates = new Map();
 function setUserState(chatId, state) {
-  userStates.set(chatId, state);
+  userStates.set(chatId.toString(), state);
+  console.log(`State set for ${chatId}: ${state}`);
 }
 function getUserState(chatId) {
-  return userStates.get(chatId);
+  return userStates.get(chatId.toString());
 }
 
 // Validate and format URL

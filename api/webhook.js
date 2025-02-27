@@ -1,8 +1,21 @@
 const TelegramBot = require('node-telegram-bot-api');
 require('dotenv').config();
 const defaultFeature = require('../features/default');
+const customFeature = require('../features/custom');
+const bulkFeature = require('../features/bulk');
+const trackFeature = require('../features/track');
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: false });
+
+// URL validation helper
+function isValidUrl(string) {
+    try {
+        new URL(string);
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
 
 module.exports = async (req, res) => {
     try {
@@ -21,19 +34,32 @@ module.exports = async (req, res) => {
         const chatId = msg.chat.id;
         const text = msg.text;
 
-        // Handle URL shortening state
+        console.log(`Processing message: ${text} from chat ${chatId}`);
+        console.log(`Current state: ${defaultFeature.getUserState(chatId)}`);
+
+        // Handle states
         const userState = defaultFeature.getUserState(chatId);
+        
         if (userState === 'WAITING_FOR_URL') {
+            if (!isValidUrl(text)) {
+                await bot.sendMessage(chatId, 
+                    '❌ Please send a valid URL.\nExample: `https://example.com`',
+                    { parse_mode: 'Markdown' }
+                );
+                return res.status(200).json({ ok: true });
+            }
             try {
                 await defaultFeature.handleDefaultShorten(bot, msg);
                 defaultFeature.setUserState(chatId, null);
+                return res.status(200).json({ ok: true });
             } catch (error) {
                 await bot.sendMessage(chatId, '❌ Failed to shorten URL');
+                defaultFeature.setUserState(chatId, null);
+                return res.status(200).json({ ok: true });
             }
-            return res.status(200).json({ ok: true });
         }
 
-        // Handle both commands and keyboard buttons
+        // Handle commands and keyboard buttons
         switch(text) {
             case '/start':
                 await bot.sendMessage(chatId,
@@ -54,21 +80,23 @@ module.exports = async (req, res) => {
                 break;
 
             case '🔗 Quick Shorten':
+                defaultFeature.setUserState(chatId, 'WAITING_FOR_URL');
                 await bot.sendMessage(chatId,
-                    '📝 *Send me the URL to shorten:*',
+                    '📝 *Send me the URL to shorten:*\nExample: `https://example.com`',
                     { parse_mode: 'Markdown' }
                 );
-                defaultFeature.setUserState(chatId, 'WAITING_FOR_URL');
                 break;
 
             case '📚 Bulk Shorten':
+                defaultFeature.setUserState(chatId, 'WAITING_FOR_BULK');
                 await bot.sendMessage(chatId,
-                    '📝 *Send me multiple URLs* (one per line):',
+                    '📝 *Send me multiple URLs* (one per line):*\nExample:\n`https://example1.com\nhttps://example2.com`',
                     { parse_mode: 'Markdown' }
                 );
                 break;
 
             case '🎯 Custom Alias':
+                defaultFeature.setUserState(chatId, 'WAITING_FOR_CUSTOM');
                 await bot.sendMessage(chatId,
                     '📝 *Send me the URL and your desired alias*\n' +
                     'Format: `URL ALIAS`\n' +
@@ -106,11 +134,18 @@ module.exports = async (req, res) => {
                 break;
 
             default:
-                // Handle URL inputs here
-                await bot.sendMessage(chatId,
-                    'Please use the keyboard buttons or commands.',
-                    { parse_mode: 'Markdown' }
-                );
+                if (text.startsWith('/track ')) {
+                    const alias = text.split(' ')[1];
+                    await trackFeature.handleTrackCommand(bot, msg, alias);
+                } else if (text.startsWith('/urls')) {
+                    // Handle /urls command
+                    await defaultFeature.handleListUrls(bot, msg);
+                } else {
+                    await bot.sendMessage(chatId,
+                        '❓ Please use the keyboard buttons or commands.\nType /start to see available options.',
+                        { parse_mode: 'Markdown' }
+                    );
+                }
         }
 
         return res.status(200).json({ ok: true });
