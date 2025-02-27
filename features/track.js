@@ -1,13 +1,22 @@
 // features/track.js
 const { supabase, serviceRole } = require('../supabaseClient');
 const axios = require('axios');
+const IPinfoWrapper = require('node-ipinfo');
+
+// Initialize IPinfo with your token
+const ipinfo = new IPinfoWrapper(process.env.IPINFO_TOKEN);
 
 async function trackClick(req, urlData) {
     try {
-        // Extract IP and device information
-        const ipAddress = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
-        const userAgent = req.headers['user-agent'] || '';
-        const deviceType = /mobile/i.test(userAgent) ? 'Mobile' : 'Desktop';
+        const ip = req.headers['x-forwarded-for'] || 
+                  req.headers['x-real-ip'] || 
+                  req.connection.remoteAddress;
+                  
+        console.log('Tracking click from IP:', ip);
+
+        // Get device info from user agent
+        const userAgent = req.headers['user-agent'];
+        const device = getDeviceType(userAgent);
 
         // Get user_id using service role client
         const { data: urlWithUser, error: urlError } = await serviceRole
@@ -21,24 +30,16 @@ async function trackClick(req, urlData) {
             return;
         }
 
-        // Get location from ipinfo.io
+        // Get location info from IPinfo
         let location = 'Unknown';
         try {
-            const ipinfoToken = process.env.IPINFO_TOKEN;
-            if (ipinfoToken && ipAddress) {
-                let ip = ipAddress.split(',')[0].trim().split(':')[0];
-                if (ip === '::1' || ip === '127.0.0.1') {
-                    location = 'Localhost';
-                } else {
-                    const response = await axios.get(`https://ipinfo.io/${ip}/json?token=${ipinfoToken}`);
-                    if (response?.data) {
-                        const { city, region, country } = response.data;
-                        location = [city, region, country].filter(Boolean).join(', ');
-                    }
-                }
-            }
+            const ipDetails = await ipinfo.lookupIp(ip);
+            location = ipDetails.city ? 
+                `${ipDetails.city}, ${ipDetails.country}` : 
+                ipDetails.country || 'Unknown';
+            console.log('Location details:', ipDetails);
         } catch (error) {
-            console.error('Location lookup error:', error.message);
+            console.error('IPinfo lookup failed:', error);
         }
 
         // Record click event using service role client
@@ -48,8 +49,8 @@ async function trackClick(req, urlData) {
                 url_id: urlData.id,
                 user_id: urlWithUser.user_id,
                 location,
-                device_type: deviceType,
-                ip_address: ipAddress,
+                device_type: device,
+                ip_address: ip,
                 user_agent: userAgent,
                 created_at: new Date().toISOString()
             });
@@ -74,6 +75,23 @@ async function trackClick(req, urlData) {
 
     } catch (error) {
         console.error('Click tracking error:', error);
+    }
+}
+
+// Helper function to determine device type
+function getDeviceType(userAgent) {
+    if (!userAgent) return 'Unknown';
+    
+    userAgent = userAgent.toLowerCase();
+    
+    if (userAgent.match(/mobile|android|iphone|ipad|ipod|webos|blackberry/i)) {
+        return 'Mobile';
+    } else if (userAgent.match(/tablet|ipad/i)) {
+        return 'Tablet';
+    } else if (userAgent.match(/bot|crawler|spider|crawling/i)) {
+        return 'Bot';
+    } else {
+        return 'Desktop';
     }
 }
 
