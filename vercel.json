@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     {
-      "src": "redirect-server.js",
+      "src": "api/index.js",
       "use": "@vercel/node"
     },
     {
@@ -17,7 +17,7 @@
     },
     {
       "src": "/(.*)",
-      "dest": "/redirect-server.js"
+      "dest": "/api/index.js"
     }
   ],
   "regions": ["sin1"],
