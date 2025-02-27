@@ -1,16 +1,17 @@
 // features/track.js
 const { supabase, serviceRole } = require('../supabaseClient');
 const axios = require('axios');
-const IPinfoWrapper = require('node-ipinfo');
+const { IPinfoWrapper } = require('node-ipinfo');
+// or if that doesn't work, try:
+// const IPinfoWrapper = require('node-ipinfo').default;
 
-// Initialize IPinfo with your token
 const ipinfo = new IPinfoWrapper(process.env.IPINFO_TOKEN);
 
 async function trackClick(req, urlData) {
     try {
-        const ip = req.headers['x-forwarded-for'] || 
+        const ip = req.headers['x-forwarded-for']?.split(',')[0] || 
                   req.headers['x-real-ip'] || 
-                  req.connection.remoteAddress;
+                  req.connection.remoteAddress?.replace('::ffff:', '');
                   
         console.log('Tracking click from IP:', ip);
 
@@ -30,16 +31,18 @@ async function trackClick(req, urlData) {
             return;
         }
 
-        // Get location info from IPinfo
+        // Get location info from IPinfo with error handling
         let location = 'Unknown';
-        try {
-            const ipDetails = await ipinfo.lookupIp(ip);
-            location = ipDetails.city ? 
-                `${ipDetails.city}, ${ipDetails.country}` : 
-                ipDetails.country || 'Unknown';
-            console.log('Location details:', ipDetails);
-        } catch (error) {
-            console.error('IPinfo lookup failed:', error);
+        if (ip && ip !== 'Unknown' && ip !== '::1') {
+            try {
+                const ipDetails = await ipinfo.lookupIp(ip);
+                console.log('IP Details:', ipDetails);
+                location = ipDetails.city ? 
+                    `${ipDetails.city}, ${ipDetails.country}` : 
+                    ipDetails.country || 'Unknown';
+            } catch (ipError) {
+                console.error('IPinfo lookup failed:', ipError);
+            }
         }
 
         // Record click event using service role client
