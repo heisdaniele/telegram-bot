@@ -13,6 +13,53 @@ const timeout = (seconds) => {
     };
 };
 
+// Add custom 404 page HTML
+const notFoundPage = `
+    <html>
+        <head>
+            <title>Link Not Found - Midget URL Shortener</title>
+            <style>
+                body { 
+                    font-family: -apple-system, system-ui, sans-serif;
+                    max-width: 600px;
+                    margin: 40px auto;
+                    padding: 20px;
+                    text-align: center;
+                    line-height: 1.6;
+                    color: #333;
+                }
+                .error { 
+                    color: #dc3545;
+                    margin: 20px 0;
+                    font-size: 1.2em;
+                }
+                .button {
+                    display: inline-block;
+                    padding: 12px 24px;
+                    background: #0088cc;
+                    color: white;
+                    text-decoration: none;
+                    border-radius: 6px;
+                    font-weight: 500;
+                    margin-top: 20px;
+                }
+                .button:hover {
+                    background: #006699;
+                }
+            </style>
+        </head>
+        <body>
+            <h1>🔍 Link Not Found</h1>
+            <p class="error">This shortened URL doesn't exist.</p>
+            <p>The link you're trying to access has either expired or was never created.</p>
+            <a href="/" class="button">Go to Homepage</a>
+            <p style="margin-top: 30px;">
+                <small>Want to create your own short links? <a href="https://t.me/MidgetURLShortnerBot">Try our Telegram Bot</a></small>
+            </p>
+        </body>
+    </html>
+`;
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -95,8 +142,17 @@ app.get('/:shortAlias', async (req, res, next) => {
             )
         ]);
 
-        if (error) throw error;
-        if (!data) return res.status(404).send('Link not found');
+        // Handle Supabase specific errors
+        if (error) {
+            if (error.code === 'PGRST116') {
+                return res.status(404).send(notFoundPage);
+            }
+            throw error;
+        }
+
+        if (!data) {
+            return res.status(404).send(notFoundPage);
+        }
 
         // Track click asynchronously with error handling
         trackClick(req, data).catch(err => {
@@ -104,9 +160,11 @@ app.get('/:shortAlias', async (req, res, next) => {
             // Don't block the redirect for tracking errors
         });
 
+        // Redirect to original URL
         res.redirect(301, data.original_url);
 
     } catch (error) {
+        console.error('URL lookup error:', error);
         next(error);
     }
 });
