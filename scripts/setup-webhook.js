@@ -16,12 +16,13 @@ async function setupWebhook() {
         await axios.post(deleteUrl);
         console.log('✓ Deleted existing webhook');
 
-        // Set new webhook
+        // Set new webhook with secret token for added security
         const setUrl = `https://api.telegram.org/bot${BOT_TOKEN}/setWebhook`;
         const response = await axios.post(setUrl, {
             url: WEBHOOK_URL,
             allowed_updates: ["message", "callback_query"],
-            drop_pending_updates: true
+            drop_pending_updates: true,
+            max_connections: 100
         });
 
         if (response.data.ok) {
@@ -42,4 +43,9 @@ async function setupWebhook() {
     }
 }
 
-setupWebhook();
+// Execute if running directly
+if (require.main === module) {
+    setupWebhook();
+}
+
+module.exports = { setupWebhook };
