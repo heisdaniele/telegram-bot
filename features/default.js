@@ -3,8 +3,10 @@ const { supabase } = require('../supabaseClient');
 const { nanoid } = require('nanoid');
 const validator = require('validator');
 
-// Update the domain and protocol constants at the top
-const DOMAIN = 'localhost:3000';  // Local testing domain
+// Update the domain constant
+const DOMAIN = process.env.NODE_ENV === 'production' 
+    ? 'telegram-bot-six-theta.vercel.app'
+    : 'localhost:3000';
 const PROTOCOL = 'https';  // Required for Telegram inline buttons
 
 // User state management (optional)

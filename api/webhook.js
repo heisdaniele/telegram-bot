@@ -90,7 +90,10 @@ module.exports = async (req, res) => {
             case '📚 Bulk Shorten':
                 defaultFeature.setUserState(chatId, 'WAITING_FOR_BULK');
                 await bot.sendMessage(chatId,
-                    '📝 *Send me multiple URLs* (one per line):*\nExample:\n`https://example1.com\nhttps://example2.com`',
+                    '*Send me multiple URLs* (one per line)\n\n' +
+                    'Example:\n' +
+                    '`https://example1.com`\n' +
+                    '`https://example2.com`',
                     { parse_mode: 'Markdown' }
                 );
                 break;
@@ -98,7 +101,7 @@ module.exports = async (req, res) => {
             case '🎯 Custom Alias':
                 defaultFeature.setUserState(chatId, 'WAITING_FOR_CUSTOM');
                 await bot.sendMessage(chatId,
-                    '📝 *Send me the URL and your desired alias*\n' +
+                    '*Send me the URL and your desired alias*\n\n' +
                     'Format: `URL ALIAS`\n' +
                     'Example: `https://example.com mylink`',
                     { parse_mode: 'Markdown' }
@@ -108,7 +111,7 @@ module.exports = async (req, res) => {
             case '📊 Track URL':
                 await bot.sendMessage(chatId,
                     '*URL Tracking*\n\n' +
-                    'Send the command `/track` followed by the alias to see stats:\n' +
+                    'Send `/track` followed by the alias to see stats\n' +
                     'Example: `/track mylink`',
                     { parse_mode: 'Markdown' }
                 );
@@ -116,19 +119,20 @@ module.exports = async (req, res) => {
 
             case '📋 My URLs':
                 await bot.sendMessage(chatId,
-                    'Use `/urls` command to see your shortened URLs.',
+                    '*My URLs*\n\n' +
+                    'Send `/urls` to see your shortened URLs',
                     { parse_mode: 'Markdown' }
                 );
                 break;
 
             case 'ℹ️ Help':
                 await bot.sendMessage(chatId,
-                    '*Available Commands:*\n\n' +
-                    '🔗 Quick Shorten - Simple URL shortening\n' +
-                    '📚 Bulk Shorten - Multiple URLs at once\n' +
-                    '🎯 Custom Alias - Choose your own alias\n' +
-                    '📊 /track - View URL statistics\n' +
-                    '📋 /urls - List your shortened URLs',
+                    '*Available Commands*\n\n' +
+                    '🔗 `Quick Shorten` - Simple URL shortening\n' +
+                    '📚 `Bulk Shorten` - Multiple URLs at once\n' +
+                    '🎯 `Custom Alias` - Choose your own alias\n' +
+                    '📊 `/track` - View URL statistics\n' +
+                    '📋 `/urls` - List your shortened URLs',
                     { parse_mode: 'Markdown' }
                 );
                 break;
