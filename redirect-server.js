@@ -38,8 +38,13 @@ app.get('/:shortAlias', async (req, res) => {
             return res.status(404).send('Link not found');
         }
 
-        // Track click asynchronously
-        trackClick(req, data).catch(console.error);
+        // Track click with better error handling
+        try {
+            await trackClick(req, data);
+        } catch (trackError) {
+            console.error('Click tracking failed:', trackError);
+            // Continue with redirect even if tracking fails
+        }
 
         // Redirect to original URL
         res.redirect(301, data.original_url);

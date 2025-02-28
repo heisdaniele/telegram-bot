@@ -9,61 +9,67 @@ const ipinfo = new IPinfoWrapper(process.env.IPINFO_TOKEN);
 
 async function trackClick(req, urlData) {
     try {
-        const ip = req.headers['x-forwarded-for']?.split(',')[0] || 
-                  req.headers['x-real-ip'] || 
-                  req.connection.remoteAddress?.replace('::ffff:', '');
-                  
-        console.log('Tracking click from IP:', ip);
+        // Get IP address with proper fallbacks and cleaning
+        const ipAddress = (
+            req.headers['x-forwarded-for']?.split(',')[0] || 
+            req.headers['x-real-ip'] || 
+            req.connection.remoteAddress
+        )?.replace('::ffff:', '') || 'Unknown';
 
-        // Get device info from user agent
+        console.log('Processing IP:', ipAddress);
+
+        // Get device info
         const userAgent = req.headers['user-agent'];
         const device = getDeviceType(userAgent);
 
-        // Get user_id using service role client
-        const { data: urlWithUser, error: urlError } = await serviceRole
-            .from('tg_shortened_urls')
-            .select('user_id')
-            .eq('id', urlData.id)
-            .single();
-
-        if (urlError) {
-            console.error('Error fetching user_id:', urlError);
-            return;
-        }
-
-        // Get location info from IPinfo with error handling
+        // Get location using IPInfo
         let location = 'Unknown';
-        if (ip && ip !== 'Unknown' && ip !== '::1') {
+        if (process.env.IPINFO_TOKEN && ipAddress && ipAddress !== 'Unknown') {
             try {
-                const ipDetails = await ipinfo.lookupIp(ip);
-                console.log('IP Details:', ipDetails);
-                location = ipDetails.city ? 
-                    `${ipDetails.city}, ${ipDetails.country}` : 
-                    ipDetails.country || 'Unknown';
+                const cleanIp = ipAddress.trim().split(':')[0];
+                console.log('Clean IP for location lookup:', cleanIp);
+
+                if (cleanIp === '::1' || cleanIp === '127.0.0.1') {
+                    location = 'Local Development';
+                } else {
+                    const ipinfoResponse = await axios.get(
+                        `https://ipinfo.io/${cleanIp}/json?token=${process.env.IPINFO_TOKEN}`,
+                        { timeout: 3000 }
+                    );
+                    console.log('IPInfo Response:', ipinfoResponse.data);
+
+                    if (ipinfoResponse.data) {
+                        const { city, region, country } = ipinfoResponse.data;
+                        location = [city, region, country]
+                            .filter(Boolean)
+                            .join(', ');
+                    }
+                }
             } catch (ipError) {
-                console.error('IPinfo lookup failed:', ipError);
+                console.error('IPInfo Error:', ipError.message);
+                if (ipError.response) {
+                    console.error('IPInfo Response:', ipError.response.data);
+                }
             }
         }
 
-        // Record click event using service role client
-        const { error: insertError } = await serviceRole
-            .from('tg_click_events')
+        // Insert click data
+        const { error: clickError } = await supabase
+            .from('tg_url_clicks')
             .insert({
                 url_id: urlData.id,
-                user_id: urlWithUser.user_id,
-                location,
-                device_type: device,
-                ip_address: ip,
+                ip_address: ipAddress,
                 user_agent: userAgent,
-                created_at: new Date().toISOString()
+                device: device,
+                location: location,
+                clicked_at: new Date().toISOString()
             });
 
-        if (insertError) {
-            console.error('Click event insert error:', insertError);
-            return;
+        if (clickError) {
+            throw clickError;
         }
 
-        // Update click count using service role client
+        // Update click count
         const { error: updateError } = await serviceRole
             .from('tg_shortened_urls')
             .update({ 
@@ -73,11 +79,19 @@ async function trackClick(req, urlData) {
             .eq('id', urlData.id);
 
         if (updateError) {
-            console.error('Click count update error:', updateError);
+            throw updateError;
         }
 
+        console.log('Click tracked successfully:', {
+            ip: ipAddress,
+            device,
+            location,
+            urlId: urlData.id
+        });
+
     } catch (error) {
-        console.error('Click tracking error:', error);
+        console.error('Track click error:', error);
+        throw error;
     }
 }
 
