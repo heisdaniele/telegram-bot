@@ -147,21 +147,56 @@ module.exports = async (req, res) => {
 
             default:
                 if (text.startsWith('/track ')) {
-                    const alias = text.split(' ')[1];
-                    if (!alias) {
+                    try {
+                        const alias = text.split(' ')[1];
+                        if (!alias) {
+                            await bot.sendMessage(chatId,
+                                '❌ Please provide an alias.\nExample: `/track mylink`',
+                                { parse_mode: 'Markdown' }
+                            );
+                            return res.status(200).json({ ok: true });
+                        }
+
+                        
+                        // Get URL stats with error handling
+                        const stats = await trackFeature.getUrlStats(alias);
+                        if (!stats) {
+                            await bot.sendMessage(chatId,
+                                '❌ URL not found. Please check the alias and try again.',
+                                { parse_mode: 'Markdown' }
+                            );
+                            return res.status(200).json({ ok: true });
+                        }
+
+                        // Format statistics safely
+                        const statsMessage = await formatStatsMessage(stats);
+                        
+                        await bot.sendMessage(chatId, statsMessage, {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                inline_keyboard: [[
+                                    {
+                                        text: '🔄 Refresh Stats',
+                                        callback_data: `track_${alias}`
+                                    }
+                                ]]
+                            }
+                        });
+                    } catch (error) {
+                        console.error('Track command error:', {
+                            error: error.message,
+                            alias,
+                            chatId
+                        });
                         await bot.sendMessage(chatId,
-                            '❌ Please provide an alias.\nExample: `/track mylink`',
+                            '❌ Failed to fetch statistics. Please try again later.',
                             { parse_mode: 'Markdown' }
                         );
-                        return res.status(200).json({ ok: true });
                     }
-                    await trackFeature.handleTrackCommand(bot, msg, alias);
                 } else if (text.startsWith('/urls')) {
-                    // Handle /urls command
                     await defaultFeature.handleListUrls(bot, msg);
                 } else if (customFeature.getUserState(chatId)) {
                     await customFeature.handleCustomInput(bot, msg);
-                    return res.status(200).json({ ok: true });
                 } else if (text.startsWith('/custom')) {
                     await customFeature.handleCustomAlias(bot, msg);
                 } else {
@@ -187,3 +222,51 @@ module.exports = async (req, res) => {
         });
     }
 };
+
+// Add this helper function at the bottom of the file
+async function formatStatsMessage(stats) {
+    try {
+        const browserStats = stats.browsers ? 
+            Object.entries(stats.browsers)
+                .map(([browser, count]) => {
+                    const percentage = stats.totalClicks ? 
+                        Math.round((count/stats.totalClicks) * 100) : 0;
+                    return `   • ${browser}: ${count} (${percentage}%)`;
+                })
+                .join('\n') : 'No data';
+
+        const deviceStats = stats.devices ?
+            Object.entries(stats.devices)
+                .map(([device, count]) => {
+                    const percentage = stats.totalClicks ? 
+                        Math.round((count/stats.totalClicks) * 100) : 0;
+                    return `   • ${device}: ${count} (${percentage}%)`;
+                })
+                .join('\n') : 'No data';
+
+        const recentClicksStats = stats.recentClicks?.length ?
+            stats.recentClicks
+                .map(click => `   • ${click.location || 'Unknown'} - ${click.device || 'Unknown'} - ${click.time || 'Unknown'}`)
+                .join('\n') : 'No recent clicks';
+
+        return [
+            '📊 *URL Statistics*\n',
+            '🔢 *Clicks:*',
+            `   • Total: ${stats.totalClicks || 0}`,
+            `   • Unique: ${stats.uniqueClicks || 0}\n`,
+            '🌐 *Browsers:*\n',
+            browserStats,
+            '\n📱 *Devices:*\n',
+            deviceStats,
+            '\n📍 *Recent Clicks:*\n',
+            recentClicksStats,
+            '\n⏰ *Last Clicked:*',
+            `   ${stats.lastClicked ? formatTimeAgo(stats.lastClicked) : 'Never'}`,
+            '\n🗓 *Created:*',
+            `   ${formatTimeAgo(stats.created)}`
+        ].join('\n');
+    } catch (error) {
+        console.error('Stats formatting error:', error);
+        return '❌ Error formatting statistics';
+    }
+}
