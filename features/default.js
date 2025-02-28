@@ -177,8 +177,78 @@ async function handleDefaultShorten(bot, msg) {
   }
 }
 
+/**
+ * Handle listing user's URLs
+ */
+async function handleListUrls(bot, msg) {
+    try {
+        const chatId = msg.chat.id;
+
+        // Get user's URLs
+        const { data: urls, error } = await supabase
+            .from('tg_shortened_urls')
+            .select('*')
+            .eq('user_id', chatId)
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error('Error fetching URLs:', error);
+            throw error;
+        }
+
+        if (!urls || urls.length === 0) {
+            await bot.sendMessage(chatId,
+                '❌ You haven\'t created any short URLs yet.\n' +
+                'Use the *Quick Shorten* button to create one!',
+                { parse_mode: 'Markdown' }
+            );
+            return;
+        }
+
+        // Format URLs list with inline buttons
+        const message = '*Your Shortened URLs:*\n\n' +
+            urls.map((url, index) => 
+                `${index + 1}. \`${process.env.NODE_ENV === 'production' ? 
+                    `https://telegram-bot-six-theta.vercel.app/${url.short_alias}` : 
+                    `http://localhost:3000/${url.short_alias}`}\`\n` +
+                `   📊 Clicks: ${url.clicks || 0}\n` +
+                `   🔗 Original: ${url.original_url.substring(0, 50)}${url.original_url.length > 50 ? '...' : ''}\n`
+            ).join('\n');
+
+        // Create inline keyboard with track buttons
+        const keyboard = urls.map(url => ([{
+            text: `📊 Track ${url.short_alias}`,
+            callback_data: `track_${url.short_alias}`
+        }]));
+
+        // Add refresh button at the bottom
+        keyboard.push([{
+            text: '🔄 Refresh List',
+            callback_data: 'refresh_urls'
+        }]);
+
+        await bot.sendMessage(chatId, message, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: keyboard
+            }
+        });
+
+    } catch (error) {
+        console.error('Error handling list URLs:', error);
+        await bot.sendMessage(msg.chat.id,
+            '❌ Failed to fetch your URLs. Please try again.',
+            { parse_mode: 'Markdown' }
+        );
+    }
+}
+
+// Update module exports
 module.exports = {
-  handleDefaultShorten,
-  setUserState,
-  getUserState
+    setUserState,
+    getUserState,
+    validateAndFormatUrl,
+    ensureUserExists,
+    handleDefaultShorten,
+    handleListUrls  // Add this to exports
 };

@@ -118,11 +118,7 @@ module.exports = async (req, res) => {
                 break;
 
             case '📋 My URLs':
-                await bot.sendMessage(chatId,
-                    '*My URLs*\n\n' +
-                    'Send `/urls` to see your shortened URLs',
-                    { parse_mode: 'Markdown' }
-                );
+                await defaultFeature.handleListUrls(bot, msg);
                 break;
 
             case 'ℹ️ Help':
