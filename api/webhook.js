@@ -4,6 +4,7 @@ const defaultFeature = require('../features/default');
 const customFeature = require('../features/custom');
 const bulkFeature = require('../features/bulk');
 const trackFeature = require('../features/track');
+const { formatTimeAgo } = require('../features/track');
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: false });
 
@@ -224,48 +225,38 @@ module.exports = async (req, res) => {
 
 // Add this helper function at the bottom of the file
 async function formatStatsMessage(stats) {
-    try {
-        const browserStats = stats.browsers ? 
-            Object.entries(stats.browsers)
-                .map(([browser, count]) => {
-                    const percentage = stats.totalClicks ? 
-                        Math.round((count/stats.totalClicks) * 100) : 0;
-                    return `   • ${browser}: ${count} (${percentage}%)`;
-                })
-                .join('\n') : 'No data';
+    // Format browser statistics
+    const browserStats = Object.entries(stats.browsers)
+        .map(([browser, count]) => 
+            `   • ${browser}: ${count} (${Math.round(count/stats.totalClicks*100)}%)`
+        ).join('\n');
 
-        const deviceStats = stats.devices ?
-            Object.entries(stats.devices)
-                .map(([device, count]) => {
-                    const percentage = stats.totalClicks ? 
-                        Math.round((count/stats.totalClicks) * 100) : 0;
-                    return `   • ${device}: ${count} (${percentage}%)`;
-                })
-                .join('\n') : 'No data';
+    // Format device statistics
+    const deviceStats = Object.entries(stats.devices)
+        .map(([device, count]) => 
+            `   • ${device}: ${count} (${Math.round(count/stats.totalClicks*100)}%)`
+        ).join('\n');
 
-        const recentClicksStats = stats.recentClicks?.length ?
-            stats.recentClicks
-                .map(click => `   • ${click.location || 'Unknown'} - ${click.device || 'Unknown'} - ${click.time || 'Unknown'}`)
-                .join('\n') : 'No recent clicks';
+    // Format recent clicks
+    const recentClicksStats = stats.recentClicks
+        .map(click => `   • ${click.location} - ${click.device} - ${click.time}`)
+        .join('\n');
 
-        return [
-            '📊 *URL Statistics*\n',
-            '🔢 *Clicks:*',
-            `   • Total: ${stats.totalClicks || 0}`,
-            `   • Unique: ${stats.uniqueClicks || 0}\n`,
-            '🌐 *Browsers:*\n',
-            browserStats,
-            '\n📱 *Devices:*\n',
-            deviceStats,
-            '\n📍 *Recent Clicks:*\n',
-            recentClicksStats,
-            '\n⏰ *Last Clicked:*',
-            `   ${stats.lastClicked ? formatTimeAgo(stats.lastClicked) : 'Never'}`,
-            '\n🗓 *Created:*',
-            `   ${formatTimeAgo(stats.created)}`
-        ].join('\n');
-    } catch (error) {
-        console.error('Stats formatting error:', error);
-        return '❌ Error formatting statistics';
-    }
+    // Build complete statistics message
+    return [
+        '📊 *URL Statistics*\n',
+        '🔢 *Clicks:*',
+        `   • Total: ${stats.totalClicks}`,
+        `   • Unique: ${stats.uniqueClicks}\n`,
+        '🌐 *Browsers:*',
+        browserStats,
+        '\n📱 *Devices:*',
+        deviceStats,
+        '\n📍 *Recent Clicks:*',
+        recentClicksStats,
+        '\n⏰ *Last Clicked:*',
+        `   ${stats.lastClicked ? formatTimeAgo(stats.lastClicked) : 'Never'}`,
+        '🗓 *Created:*',
+        `   ${formatTimeAgo(stats.created)}`
+    ].join('\n');
 }

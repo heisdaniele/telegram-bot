@@ -360,5 +360,6 @@ module.exports = {
     trackClick,
     getUrlStats,
     handleTrackCommand,
-    handleListUrls
+    handleListUrls,
+    formatTimeAgo  // Add this line
 };
