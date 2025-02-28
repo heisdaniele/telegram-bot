@@ -7,106 +7,108 @@ const { IPinfoWrapper } = require('node-ipinfo');
 
 const ipinfo = new IPinfoWrapper(process.env.IPINFO_TOKEN);
 
+// Cache for IP locations to reduce API calls
+const locationCache = new Map();
+
+async function getLocationInfo(ip) {
+    // Check cache first
+    if (locationCache.has(ip)) {
+        console.log('Location found in cache:', ip);
+        return locationCache.get(ip);
+    }
+
+    const IPINFO_TOKEN = process.env.IPINFO_TOKEN;
+    
+    try {
+        const cleanIp = ip.trim().split(':')[0];
+        
+        if (cleanIp === '::1' || cleanIp === '127.0.0.1') {
+            return 'Local Development';
+        }
+
+        const ipinfoUrl = `https://ipinfo.io/${cleanIp}/json`;
+        const ipinfoResponse = await axios.get(ipinfoUrl, {
+            headers: {
+                'Authorization': `Bearer ${IPINFO_TOKEN}`,
+                'Accept': 'application/json'
+            },
+            timeout: 3000 // Reduced timeout
+        });
+
+        if (ipinfoResponse.data) {
+            const { city, region, country } = ipinfoResponse.data;
+            const location = [city, region, country]
+                .filter(Boolean)
+                .join(', ') || 'Unknown';
+            
+            // Cache the result
+            locationCache.set(ip, location);
+            return location;
+        }
+    } catch (error) {
+        console.error('IPInfo Error:', {
+            ip,
+            error: error.message,
+            response: error.response?.data
+        });
+    }
+    
+    return 'Unknown';
+}
+
 async function trackClick(req, urlData) {
     try {
-        // Get IP address with proper fallbacks and cleaning
         const ipAddress = (
             req.headers['x-forwarded-for']?.split(',')[0] || 
             req.headers['x-real-ip'] || 
             req.connection.remoteAddress
         )?.replace('::ffff:', '') || 'Unknown';
 
-        console.log('Raw IP:', ipAddress);
-
-        // Get device info
         const userAgent = req.headers['user-agent'];
         const device = getDeviceType(userAgent);
+        const browser = getBrowserInfo(userAgent);
 
-        // Get location info
-        let location = 'Unknown';
-        const IPINFO_TOKEN = process.env.IPINFO_TOKEN;
+        // Get location asynchronously
+        const locationPromise = getLocationInfo(ipAddress);
 
-        if (IPINFO_TOKEN && ipAddress && ipAddress !== 'Unknown') {
-            try {
-                const cleanIp = ipAddress.trim().split(':')[0];
-                console.log('Clean IP:', cleanIp);
+        // Wait for location info with timeout
+        const location = await Promise.race([
+            locationPromise,
+            new Promise(resolve => setTimeout(() => resolve('Unknown'), 3000))
+        ]);
 
-                if (cleanIp === '::1' || cleanIp === '127.0.0.1') {
-                    location = 'Local Development';
-                } else {
-                    const ipinfoUrl = `https://ipinfo.io/${cleanIp}/json`;
-                    const ipinfoHeaders = {
-                        'Authorization': `Bearer ${IPINFO_TOKEN}`,
-                        'Accept': 'application/json'
-                    };
-
-                    console.log('IPInfo Request URL:', ipinfoUrl);
-                    const ipinfoResponse = await axios.get(ipinfoUrl, {
-                        headers: ipinfoHeaders,
-                        timeout: 5000
-                    });
-
-                    if (ipinfoResponse.data) {
-                        const { city, region, country } = ipinfoResponse.data;
-                        console.log('IPInfo Raw Response:', ipinfoResponse.data);
-                        
-                        location = [city, region, country]
-                            .filter(Boolean)
-                            .join(', ') || 'Unknown';
-                            
-                        console.log('Formatted Location:', location);
-                    }
-                }
-            } catch (ipError) {
-                console.error('IPInfo Error Details:', {
-                    message: ipError.message,
-                    response: ipError.response?.data,
-                    status: ipError.response?.status,
-                    headers: ipError.response?.headers
-                });
-            }
-        } else {
-            console.log('IPInfo Skipped:', {
-                hasToken: !!IPINFO_TOKEN,
-                hasIp: !!ipAddress,
-                ip: ipAddress
-            });
-        }
-
-        // Track in database
+        // Insert click event - now includes user_id
         const clickData = {
             url_id: urlData.id,
+            user_id: urlData.user_id, // Add user_id from urlData
             ip_address: ipAddress,
             user_agent: userAgent,
-            device: device,
+            device_type: device, // Changed from 'device' to 'device_type' to match schema
             location: location,
-            clicked_at: new Date().toISOString()
+            created_at: new Date().toISOString()
         };
 
-        console.log('Saving click data:', clickData);
-
-        const { error: clickError } = await supabase
-            .from('tg_url_clicks')
+        // Insert into tg_click_events
+        // No need to manually update clicks/last_clicked as trigger handles it
+        const { error: clickError } = await serviceRole
+            .from('tg_click_events')
             .insert(clickData);
 
         if (clickError) {
             throw clickError;
         }
 
-        // Update click count
-        await serviceRole
-            .from('tg_shortened_urls')
-            .update({ 
-                clicks: (urlData.clicks || 0) + 1,
-                last_clicked: new Date().toISOString()
-            })
-            .eq('id', urlData.id);
-
-        return { success: true, location };
+        return { 
+            success: true, 
+            location,
+            device,
+            browser,
+            clickData 
+        };
 
     } catch (error) {
         console.error('Track click error:', error);
-        throw error;
+        return { success: false, error: error.message };
     }
 }
 
@@ -151,8 +153,8 @@ function formatTimeAgo(date) {
 
 async function getUrlStats(shortAlias) {
     try {
-        // Get URL data with user_id
-        const { data: urlData, error: urlError } = await serviceRole  // Changed to serviceRole
+        // Get URL data
+        const { data: urlData, error: urlError } = await serviceRole
             .from('tg_shortened_urls')
             .select(`
                 *,
@@ -169,10 +171,8 @@ async function getUrlStats(shortAlias) {
             throw urlError;
         }
 
-        console.log('URL Data:', urlData); // Debug log
-
-        // Get click events with serviceRole
-        const { data: clickData, error: clickError } = await serviceRole  // Changed to serviceRole
+        // Get click events
+        const { data: clickEvents, error: clickError } = await serviceRole
             .from('tg_click_events')
             .select('*')
             .eq('url_id', urlData.id)
@@ -183,22 +183,18 @@ async function getUrlStats(shortAlias) {
             throw clickError;
         }
 
-        console.log('Click Data:', clickData); // Debug log
-
-        // Calculate unique clicks by IP
-        const uniqueIPs = new Set(clickData.map(click => click.ip_address));
-        const uniqueBrowsers = new Set(clickData.map(click => click.user_agent));
-
-        // Format stats with browser info
+        // Calculate stats
+        const uniqueIPs = new Set(clickEvents.map(click => click.ip_address));
+        
         const stats = {
-            totalClicks: clickData.length,
+            totalClicks: urlData.clicks, // Use the clicks from shortened_urls
             uniqueClicks: uniqueIPs.size,
             browsers: {},
             devices: {},
             locations: {},
-            lastClicked: clickData[0]?.created_at,
+            lastClicked: urlData.last_clicked, // Use last_clicked from shortened_urls
             created: urlData.created_at,
-            recentClicks: clickData.slice(0, 5).map(click => ({
+            recentClicks: clickEvents.slice(0, 5).map(click => ({
                 location: click.location,
                 device: click.device_type,
                 browser: getBrowserInfo(click.user_agent),
@@ -207,14 +203,12 @@ async function getUrlStats(shortAlias) {
         };
 
         // Calculate distributions
-        clickData.forEach(click => {
+        clickEvents.forEach(click => {
             const browser = getBrowserInfo(click.user_agent);
             stats.browsers[browser] = (stats.browsers[browser] || 0) + 1;
             stats.devices[click.device_type] = (stats.devices[click.device_type] || 0) + 1;
             stats.locations[click.location] = (stats.locations[click.location] || 0) + 1;
         });
-
-        console.log('Processed Stats:', stats); // Debug log
 
         return stats;
 
@@ -267,20 +261,6 @@ ${Object.entries(stats.browsers)
 📱 *Devices:*
 ${Object.entries(stats.devices)
     .map(([device, count]) => `   • ${device}: ${count} (${Math.round(count/stats.totalClicks*100)}%)`)
-    .join('\n')}
-
-📍 *Top Locations:*
-${Object.entries(stats.locations)
-    .sort(([,a], [,b]) => b - a)
-    .slice(0, 5)
-    .map(([location, count]) => `   • ${location}: ${count} (${Math.round(count/stats.totalClicks*100)}%)`)
-    .join('\n')}
-
-🕒 *Recent Clicks:*
-${stats.recentClicks
-    .map(click => `   • ${click.location} • ${click.browser} • ${click.device} • ${click.time}`)
-    .join('\n')}
-
 ⏰ *Last Clicked:* ${stats.lastClicked ? formatTimeAgo(stats.lastClicked) : 'Never'}
 🗓 *Created:* ${formatTimeAgo(stats.created)}`;
 
@@ -309,13 +289,10 @@ async function handleListUrls(bot, msg) {
     try {
         const chatId = msg.chat.id;
 
-        // Get user's URLs
+        // Get user's URLs with click counts
         const { data: urls, error } = await serviceRole
             .from('tg_shortened_urls')
-            .select(`
-                *,
-                tg_click_events (count)
-            `)
+            .select('*')
             .eq('user_id', msg.from.id)
             .order('created_at', { ascending: false });
 
@@ -333,12 +310,11 @@ async function handleListUrls(bot, msg) {
             return;
         }
 
-        // Format URLs list
+        // Format URLs list - now using clicks from shortened_urls table
         const urlsList = urls.map((url, index) => {
-            const clicks = url.tg_click_events?.length || 0;
             return `${index + 1}. \`${process.env.DOMAIN}/${url.short_alias}\`\n` +
                    `   • Original: ${url.original_url.substring(0, 50)}${url.original_url.length > 50 ? '...' : ''}\n` +
-                   `   • Clicks: ${clicks}\n` +
+                   `   • Clicks: ${url.clicks}\n` +
                    `   • Created: ${formatTimeAgo(url.created_at)}`;
         }).join('\n\n');
 
@@ -366,6 +342,12 @@ async function handleListUrls(bot, msg) {
         );
     }
 }
+
+// Clear location cache periodically (every hour)
+setInterval(() => {
+    console.log('Clearing location cache...');
+    locationCache.clear();
+}, 3600000);
 
 // Add to exports
 module.exports = {

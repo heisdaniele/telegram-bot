@@ -190,43 +190,54 @@ async function startBot() {
                         break;
                     
                     case 'track':
-                        // Show tracking stats when button is clicked
-                        await bot.answerCallbackQuery(query.id);
-                        const stats = await trackFeature.getUrlStats(alias);
-                        
-                        // Format statistics message
-                        const statsMessage = `
+                        try {
+                            await bot.answerCallbackQuery(query.id);
+                            const stats = await trackFeature.getUrlStats(alias);
+                            
+                            // Format statistics message with updated fields
+                            const statsMessage = `
 📊 *URL Statistics*
 
-🔗 *Short URL:* \`${alias}\`
-🔢 *Total Clicks:* ${stats.totalClicks}
+🔢 *Clicks:*
+   • Total: ${stats.totalClicks}
+   • Unique: ${stats.uniqueClicks}
 
-📱 *Device Distribution:*
+🌐 *Browsers:*
+${Object.entries(stats.browsers)
+    .map(([browser, count]) => `   • ${browser}: ${count} (${Math.round(count/stats.totalClicks*100)}%)`)
+    .join('\n')}
+
+📱 *Devices:*
 ${Object.entries(stats.devices)
-    .map(([device, count]) => `   • ${device}: ${count}`)
+    .map(([device, count]) => `   • ${device}: ${count} (${Math.round(count/stats.totalClicks*100)}%)`)
     .join('\n')}
 
-📍 *Top Locations:*
-${Object.entries(stats.locations)
-    .sort(([,a], [,b]) => b - a)
-    .slice(0, 5)
-    .map(([location, count]) => `   • ${location}: ${count}`)
+📍 *Recent Clicks:*
+${stats.recentClicks
+    .map(click => `   • ${click.location} - ${click.device} - ${click.time}`)
     .join('\n')}
 
-⏰ *Last Clicked:* ${stats.lastClicked ? new Date(stats.lastClicked).toLocaleString() : 'Never'}
-🗓 *Created:* ${new Date(stats.created).toLocaleString()}`;
+⏰ *Last Clicked:* ${stats.lastClicked ? formatTimeAgo(stats.lastClicked) : 'Never'}
+🗓 *Created:* ${formatTimeAgo(stats.created)}`;
 
-                        await bot.sendMessage(query.message.chat.id, statsMessage, {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                inline_keyboard: [[
-                                    {
-                                        text: '🔄 Refresh Stats',
-                                        callback_data: `track_${alias}`
-                                    }
-                                ]]
-                            }
-                        });
+                            await bot.sendMessage(query.message.chat.id, statsMessage, {
+                                parse_mode: 'Markdown',
+                                reply_markup: {
+                                    inline_keyboard: [[
+                                        {
+                                            text: '🔄 Refresh Stats',
+                                            callback_data: `track_${alias}`
+                                        }
+                                    ]]
+                                }
+                            });
+                        } catch (error) {
+                            console.error('Track stats error:', error);
+                            await bot.answerCallbackQuery(query.id, {
+                                text: '❌ Failed to fetch statistics',
+                                show_alert: true
+                            });
+                        }
                         break;
 
                     case 'refresh_urls':

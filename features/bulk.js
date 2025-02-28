@@ -42,21 +42,30 @@ async function handleBulkShorten(bot, msg) {
             }
 
             const shortAlias = nanoid(6).toLowerCase();
+            
+            // Updated insert with new schema fields
             const { error } = await supabase
                 .from('tg_shortened_urls')
                 .insert({
                     user_id: msg.from.id,
                     original_url: formattedUrl,
                     short_alias: shortAlias,
-                    created_at: new Date().toISOString()
+                    created_at: new Date().toISOString(),
+                    clicks: 0, // Initialize clicks counter
+                    last_clicked: null // Initialize last_clicked timestamp
                 });
 
             if (error) {
+                console.error('Database error:', error);
                 response += `❌ Failed to shorten: ${url}\n`;
                 continue;
             }
 
-            response += `✅ ${url}\n➜ \`localhost:3000/${shortAlias}\`\n\n`;
+            const domain = process.env.NODE_ENV === 'production' 
+                ? 'telegram-bot-six-theta.vercel.app'
+                : 'localhost:3000';
+
+            response += `✅ ${url}\n➜ \`${domain}/${shortAlias}\`\n\n`;
             successCount++;
         } catch (error) {
             console.error('Error processing URL:', url, error);

@@ -87,14 +87,16 @@ async function handleCustomInput(bot, msg) {
                     );
                 }
 
-                // Create the shortened URL
+                // Create the shortened URL with new schema fields
                 const { error } = await supabase
                     .from('tg_shortened_urls')
                     .insert({
                         user_id: msg.from.id,
                         original_url: userState.url,
                         short_alias: customAlias,
-                        created_at: new Date().toISOString()
+                        created_at: new Date().toISOString(),
+                        clicks: 0, // Initialize clicks counter
+                        last_clicked: null // Initialize last_clicked timestamp
                     });
 
                 if (error) {
@@ -213,7 +215,9 @@ async function handleCustomAlias(bot, msg) {
             user_id: msg.from.id,
             original_url: formattedUrl,
             short_alias: customAlias,
-            created_at: new Date().toISOString()
+            created_at: new Date().toISOString(),
+            clicks: 0, // Initialize clicks counter
+            last_clicked: null // Initialize last_clicked timestamp
         })
         .select()
         .single();

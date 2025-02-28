@@ -16,40 +16,61 @@ if (!supabaseUrl || !supabaseKey || !serviceRoleKey) {
 }
 
 const options = {
-  auth: {
-    autoRefreshToken: true,
-    persistSession: false,
-    detectSessionInUrl: false
-  },
-  global: {
-    headers: { 'x-my-custom-header': 'my-app-name' },
-  },
-  db: {
-    schema: 'public'
-  },
-  realtime: {
-    timeout: 20000 // 20 seconds
-  }
+    auth: {
+        autoRefreshToken: true,
+        persistSession: false,
+        detectSessionInUrl: false
+    },
+    global: {
+        headers: { 'x-my-custom-header': 'telegram-url-shortener' },
+    },
+    db: {
+        schema: 'public'
+    },
+    realtime: {
+        timeout: 20000 // 20 seconds
+    }
 };
 
+// Initialize clients with updated options
 const supabase = createClient(supabaseUrl, supabaseKey, options);
 const serviceRole = createClient(supabaseUrl, serviceRoleKey, options);
 
+// Enhanced connection test function
 async function testConnection() {
     try {
         console.log('Testing Supabase connection...');
-        const { data, error } = await supabase
+        
+        // Test URL table access
+        const { data: urlData, error: urlError } = await serviceRole
             .from('tg_shortened_urls')
-            .select('id')
+            .select('id, short_alias, clicks')
             .limit(1);
 
-        if (error) {
-            throw new Error(`Database error: ${error.message}`);
+        if (urlError) {
+            throw new Error(`URL table access error: ${urlError.message}`);
         }
+
+        // Test click events table access
+        const { data: clickData, error: clickError } = await serviceRole
+            .from('tg_click_events')
+            .select('id, url_id')
+            .limit(1);
+
+        if (clickError) {
+            throw new Error(`Click events table access error: ${clickError.message}`);
+        }
+
         console.log('✓ Supabase connection successful');
+        console.log('✓ URL table accessible');
+        console.log('✓ Click events table accessible');
+        
         return true;
     } catch (error) {
-        console.error('Connection failed:', error.message);
+        console.error('Connection test failed:', {
+            message: error.message,
+            timestamp: new Date().toISOString()
+        });
         throw error;
     }
 }

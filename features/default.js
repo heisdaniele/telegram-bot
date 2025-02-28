@@ -119,14 +119,16 @@ async function handleDefaultShorten(bot, msg) {
     const shortUrl = `${PROTOCOL}://${DOMAIN}/${shortAlias}`;
     const displayUrl = `${DOMAIN}/${shortAlias}`;  // For display purposes
 
-    // 5. Insert into database
+    // 5. Insert into database with new schema
     const { data, error: insertError } = await supabase
       .from('tg_shortened_urls')
       .insert({
         user_id: msg.from.id,
         original_url: formattedUrl,
         short_alias: shortAlias,
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        clicks: 0, // Initialize clicks counter
+        last_clicked: null // Initialize last_clicked timestamp
       })
       .select()
       .single();
@@ -184,10 +186,15 @@ async function handleListUrls(bot, msg) {
     try {
         const chatId = msg.chat.id;
 
-        // Get user's URLs
+        // Get user's URLs with updated schema
         const { data: urls, error } = await supabase
             .from('tg_shortened_urls')
-            .select('*')
+            .select(`
+                *,
+                tg_click_events (
+                    count
+                )
+            `)
             .eq('user_id', chatId)
             .order('created_at', { ascending: false });
 
@@ -205,15 +212,15 @@ async function handleListUrls(bot, msg) {
             return;
         }
 
-        // Format URLs list with inline buttons
+        // Format URLs list with inline buttons and updated click stats
         const message = '*Your Shortened URLs:*\n\n' +
-            urls.map((url, index) => 
-                `${index + 1}. \`${process.env.NODE_ENV === 'production' ? 
-                    `https://telegram-bot-six-theta.vercel.app/${url.short_alias}` : 
-                    `http://localhost:3000/${url.short_alias}`}\`\n` +
-                `   📊 Clicks: ${url.clicks || 0}\n` +
-                `   🔗 Original: ${url.original_url.substring(0, 50)}${url.original_url.length > 50 ? '...' : ''}\n`
-            ).join('\n');
+            urls.map((url, index) => {
+                const displayUrl = `${PROTOCOL}://${DOMAIN}/${url.short_alias}`;
+                return `${index + 1}. \`${displayUrl}\`\n` +
+                    `   📊 Clicks: ${url.clicks || 0}\n` +
+                    `   ⏰ Last Click: ${url.last_clicked ? formatTimeAgo(url.last_clicked) : 'Never'}\n` +
+                    `   🔗 Original: ${url.original_url.substring(0, 50)}${url.original_url.length > 50 ? '...' : ''}\n`;
+            }).join('\n');
 
         // Create inline keyboard with track buttons
         const keyboard = urls.map(url => ([{
@@ -229,6 +236,7 @@ async function handleListUrls(bot, msg) {
 
         await bot.sendMessage(chatId, message, {
             parse_mode: 'Markdown',
+            disable_web_page_preview: true,
             reply_markup: {
                 inline_keyboard: keyboard
             }

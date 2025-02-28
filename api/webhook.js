@@ -10,8 +10,8 @@ const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: false });
 // URL validation helper
 function isValidUrl(string) {
     try {
-        new URL(string);
-        return true;
+        const url = new URL(string);
+        return ['http:', 'https:'].includes(url.protocol);
     } catch (_) {
         return false;
     }
@@ -41,19 +41,31 @@ module.exports = async (req, res) => {
         const userState = defaultFeature.getUserState(chatId);
         
         if (userState === 'WAITING_FOR_URL') {
-            if (!isValidUrl(text)) {
+            let formattedUrl = text;
+            if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
+                formattedUrl = 'https://' + formattedUrl;
+            }
+
+            if (!isValidUrl(formattedUrl)) {
                 await bot.sendMessage(chatId, 
                     '❌ Please send a valid URL.\nExample: `https://example.com`',
                     { parse_mode: 'Markdown' }
                 );
                 return res.status(200).json({ ok: true });
             }
+
             try {
+                // Update msg.text with formatted URL
+                msg.text = formattedUrl;
                 await defaultFeature.handleDefaultShorten(bot, msg);
                 defaultFeature.setUserState(chatId, null);
                 return res.status(200).json({ ok: true });
             } catch (error) {
-                await bot.sendMessage(chatId, '❌ Failed to shorten URL');
+                console.error('URL shortening error:', error);
+                await bot.sendMessage(chatId, 
+                    '❌ Failed to shorten URL. Please try again.',
+                    { parse_mode: 'Markdown' }
+                );
                 defaultFeature.setUserState(chatId, null);
                 return res.status(200).json({ ok: true });
             }
@@ -106,7 +118,13 @@ module.exports = async (req, res) => {
                 await bot.sendMessage(chatId,
                     '*URL Tracking*\n\n' +
                     'Send `/track` followed by the alias to see stats\n' +
-                    'Example: `/track mylink`',
+                    'Example: `/track mylink`\n\n' +
+                    'Stats include:\n' +
+                    '• Total clicks\n' +
+                    '• Unique visitors\n' +
+                    '• Device types\n' +
+                    '• Locations\n' +
+                    '• Recent activity',
                     { parse_mode: 'Markdown' }
                 );
                 break;
@@ -130,6 +148,13 @@ module.exports = async (req, res) => {
             default:
                 if (text.startsWith('/track ')) {
                     const alias = text.split(' ')[1];
+                    if (!alias) {
+                        await bot.sendMessage(chatId,
+                            '❌ Please provide an alias.\nExample: `/track mylink`',
+                            { parse_mode: 'Markdown' }
+                        );
+                        return res.status(200).json({ ok: true });
+                    }
                     await trackFeature.handleTrackCommand(bot, msg, alias);
                 } else if (text.startsWith('/urls')) {
                     // Handle /urls command
@@ -150,7 +175,12 @@ module.exports = async (req, res) => {
         return res.status(200).json({ ok: true });
 
     } catch (error) {
-        console.error('Webhook error:', error);
+        console.error('Webhook error:', {
+            error: error.message,
+            stack: error.stack,
+            userId: msg?.from?.id,
+            chatId: msg?.chat?.id
+        });
         return res.status(500).json({ 
             error: 'Internal server error',
             details: error.message 
