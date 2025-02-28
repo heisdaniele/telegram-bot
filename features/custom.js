@@ -2,8 +2,10 @@ const { supabase } = require('../supabaseClient');
 const validator = require('validator');
 
 // Constants
-const DOMAIN = 'localhost:3000';
-const PROTOCOL = 'https';
+const DOMAIN = process.env.NODE_ENV === 'production' 
+    ? 'telegram-bot-six-theta.vercel.app'
+    : 'localhost:3000';
+const PROTOCOL = 'https';  // Always use HTTPS for production
 
 // User state management
 const userStates = new Map();

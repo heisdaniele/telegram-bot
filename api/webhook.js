@@ -99,13 +99,7 @@ module.exports = async (req, res) => {
                 break;
 
             case '🎯 Custom Alias':
-                defaultFeature.setUserState(chatId, 'WAITING_FOR_CUSTOM');
-                await bot.sendMessage(chatId,
-                    '*Send me the URL and your desired alias*\n\n' +
-                    'Format: `URL ALIAS`\n' +
-                    'Example: `https://example.com mylink`',
-                    { parse_mode: 'Markdown' }
-                );
+                await customFeature.handleCustomStart(bot, chatId);
                 break;
 
             case '📊 Track URL':
@@ -140,6 +134,11 @@ module.exports = async (req, res) => {
                 } else if (text.startsWith('/urls')) {
                     // Handle /urls command
                     await defaultFeature.handleListUrls(bot, msg);
+                } else if (customFeature.getUserState(chatId)) {
+                    await customFeature.handleCustomInput(bot, msg);
+                    return res.status(200).json({ ok: true });
+                } else if (text.startsWith('/custom')) {
+                    await customFeature.handleCustomAlias(bot, msg);
                 } else {
                     await bot.sendMessage(chatId,
                         '❓ Please use the keyboard buttons or commands.\nType /start to see available options.',
