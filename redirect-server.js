@@ -10,9 +10,24 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Add detailed logging middleware
+// Add request logging middleware
 app.use((req, res, next) => {
-    console.log(`${new Date().toISOString()} ${req.method} ${req.url}`);
+    const timestamp = new Date().toISOString();
+    const method = req.method;
+    const url = req.url;
+    const ip = req.headers['x-forwarded-for']?.split(',')[0] || 
+               req.headers['x-real-ip'] || 
+               req.connection.remoteAddress?.replace('::ffff:', '');
+    const userAgent = req.headers['user-agent'];
+
+    console.log(`
+Request Details [${timestamp}]:
+- Method: ${method}
+- URL: ${url}
+- IP: ${ip}
+- User-Agent: ${userAgent}
+- Headers: ${JSON.stringify(req.headers, null, 2)}
+    `);
     next();
 });
 
@@ -33,21 +48,38 @@ app.get('/:shortAlias', async (req, res) => {
             .eq('short_alias', shortAlias)
             .single();
 
-        if (error || !data) {
-            console.error('URL lookup failed:', error);
+        if (error) {
+            console.error('Database error:', error);
+            return res.status(500).send('Database error occurred');
+        }
+
+        if (!data) {
+            console.log('URL not found:', shortAlias);
             return res.status(404).send('Link not found');
         }
 
-        // Track click asynchronously
-        trackClick(req, data).catch(console.error);
+        // Track click with detailed error handling
+        try {
+            await trackClick(req, data);
+            console.log('Click tracked successfully for:', shortAlias);
+        } catch (trackError) {
+            console.error('Click tracking failed:', trackError);
+            // Continue with redirect even if tracking fails
+        }
 
-        // Redirect to original URL
+        console.log('Redirecting to:', data.original_url);
         res.redirect(301, data.original_url);
 
     } catch (error) {
-        console.error('Redirect error:', error);
-        res.status(500).send('Server error');
+        console.error('Redirect server error:', error);
+        res.status(500).send('Server error occurred');
     }
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error('Global error handler:', err);
+    res.status(500).send('An unexpected error occurred');
 });
 
 app.listen(PORT, () => {
