@@ -30,28 +30,35 @@ async function handleCustomStart(bot, chatId) {
     );
 }
 
+// Update the handleCustomInput function in custom.js
+
 async function handleCustomInput(bot, msg) {
     const chatId = msg.chat.id;
     const userState = getUserState(chatId);
     
-    if (!userState) return;
+    if (!userState || !userState.step) return;
 
     try {
         switch (userState.step) {
             case 'waiting_for_url':
                 let formattedUrl = msg.text.trim();
+                
+                // Add protocol if missing
                 if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
                     formattedUrl = 'https://' + formattedUrl;
                 }
 
+                // Validate URL
                 if (!validator.isURL(formattedUrl)) {
-                    return bot.sendMessage(chatId,
+                    await bot.sendMessage(chatId,
                         '❌ Invalid URL format.\n\n' +
                         'Please send a valid URL (e.g., `https://example.com`):',
                         { parse_mode: 'Markdown' }
                     );
+                    return;
                 }
 
+                // Save URL and move to alias step
                 setUserState(chatId, { 
                     step: 'waiting_for_alias',
                     url: formattedUrl 
@@ -70,14 +77,19 @@ async function handleCustomInput(bot, msg) {
                 break;
 
             case 'waiting_for_alias':
-                const customAlias = msg.text.trim();
+                const customAlias = msg.text.trim().toLowerCase();
                 
-                if (!/^[a-zA-Z0-9-_]+$/.test(customAlias)) {
-                    return bot.sendMessage(chatId,
-                        '❌ Invalid alias format.\n' +
-                        'Please use only letters, numbers, hyphens, and underscores:',
+                // Validate alias format
+                if (!customAlias || !/^[a-zA-Z0-9-_]+$/.test(customAlias)) {
+                    await bot.sendMessage(chatId,
+                        '❌ Invalid alias format.\n\n' +
+                        'Please use only:\n' +
+                        '• Letters (a-z, A-Z)\n' +
+                        '• Numbers (0-9)\n' +
+                        '• Hyphens (-) and underscores (_)',
                         { parse_mode: 'Markdown' }
                     );
+                    return;
                 }
 
                 // Check if alias is available
@@ -146,8 +158,8 @@ async function handleCustomInput(bot, msg) {
                 break;
         }
     } catch (error) {
-        console.error('Error in handleCustomInput:', error);
-        userStates.delete(chatId); // Clear state on error
+        console.error('Custom URL error:', error);
+        userStates.delete(chatId);
         await bot.sendMessage(chatId,
             '❌ An error occurred. Please try again with /custom',
             { parse_mode: 'Markdown' }
