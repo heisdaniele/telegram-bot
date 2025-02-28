@@ -195,20 +195,10 @@ async function startBot() {
                             const stats = await trackFeature.getUrlStats(alias);
                             
                             // Format browser statistics
-                            const browserStats = Object.entries(stats.browsers)
-                                .map(([browser, count]) => {
-                                    const percentage = Math.round((count/stats.totalClicks) * 100);
-                                    return `   • ${browser}: ${count} (${percentage}%)`;
-                                })
-                                .join('\n');
+                            const browserStats = formatStatistics('browsers', stats.browsers);
 
                             // Format device statistics
-                            const deviceStats = Object.entries(stats.devices)
-                                .map(([device, count]) => {
-                                    const percentage = Math.round((count/stats.totalClicks) * 100);
-                                    return `   • ${device}: ${count} (${percentage}%)`;
-                                })
-                                .join('\n');
+                            const deviceStats = formatStatistics('devices', stats.devices);
 
                             // Format recent clicks
                             const recentClicksStats = stats.recentClicks
@@ -284,6 +274,16 @@ function isValidUrl(string) {
         return false;
     }
 }
+
+// Helper function to format statistics
+const formatStatistics = (type, stats) => {
+    return Object.entries(stats)
+        .map(([key, count]) => {
+            const percentage = Math.round((count / stats.totalClicks) * 100);
+            return `   • ${key}: ${count} (${percentage}%)`;
+        })
+        .join('\n');
+};
 
 // Start the bot
 startBot();

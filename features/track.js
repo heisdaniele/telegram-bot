@@ -245,24 +245,30 @@ async function handleTrackCommand(bot, msg) {
         const shortAlias = parts[1];
         const stats = await getUrlStats(shortAlias);
 
-        // Format statistics message
-        const statsMessage = `
-📊 *URL Statistics for ${shortAlias}*
+        // Format browser and device statistics
+        const browserStats = Object.entries(stats.browsers)
+            .map(([browser, count]) => 
+                `   • ${browser}: ${count} (${Math.round(count/stats.totalClicks*100)}%)`
+            ).join('\n');
 
-🔢 *Clicks:*
-   • Total: ${stats.totalClicks}
-   • Unique: ${stats.uniqueClicks}
+        const deviceStats = Object.entries(stats.devices)
+            .map(([device, count]) => 
+                `   • ${device}: ${count} (${Math.round(count/stats.totalClicks*100)}%)`
+            ).join('\n');
 
-🌐 *Browsers:*
-${Object.entries(stats.browsers)
-    .map(([browser, count]) => `   • ${browser}: ${count} (${Math.round(count/stats.totalClicks*100)}%)`)
-    .join('\n')}
-
-📱 *Devices:*
-${Object.entries(stats.devices)
-    .map(([device, count]) => `   • ${device}: ${count} (${Math.round(count/stats.totalClicks*100)}%)`)
-⏰ *Last Clicked:* ${stats.lastClicked ? formatTimeAgo(stats.lastClicked) : 'Never'}
-🗓 *Created:* ${formatTimeAgo(stats.created)}`;
+        // Build statistics message
+        const statsMessage = [
+            `📊 *URL Statistics for ${shortAlias}*\n`,
+            '🔢 *Clicks:*',
+            `   • Total: ${stats.totalClicks}`,
+            `   • Unique: ${stats.uniqueClicks}\n`,
+            '🌐 *Browsers:*',
+            browserStats,
+            '\n📱 *Devices:*',
+            deviceStats,
+            `\n⏰ *Last Clicked:* ${stats.lastClicked ? formatTimeAgo(stats.lastClicked) : 'Never'}`,
+            `🗓 *Created:* ${formatTimeAgo(stats.created)}`
+        ].join('\n');
 
         await bot.sendMessage(msg.chat.id, statsMessage, {
             parse_mode: 'Markdown',
