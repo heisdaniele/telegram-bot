@@ -11,7 +11,15 @@ const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: false });
 function isValidUrl(string) {
     try {
         const url = new URL(string);
-        return ['http:', 'https:'].includes(url.protocol);
+        // Check for valid protocol and hostname
+        if (!['http:', 'https:'].includes(url.protocol)) {
+            return false;
+        }
+        // Ensure hostname has at least one dot and no spaces
+        if (!url.hostname.includes('.') || url.hostname.includes(' ')) {
+            return false;
+        }
+        return true;
     } catch (_) {
         return false;
     }
@@ -41,11 +49,22 @@ module.exports = async (req, res) => {
         const userState = defaultFeature.getUserState(chatId);
         
         if (userState === 'WAITING_FOR_URL') {
+            // Remove the message if it's not a URL
+            if (!text) {
+                await bot.sendMessage(chatId, 
+                    '❌ Please send a valid URL.\nExample: `https://example.com`',
+                    { parse_mode: 'Markdown' }
+                );
+                return res.status(200).json({ ok: true });
+            }
+
             let formattedUrl = text;
+            // Add protocol if missing
             if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
                 formattedUrl = 'https://' + formattedUrl;
             }
 
+            // Validate URL
             if (!isValidUrl(formattedUrl)) {
                 await bot.sendMessage(chatId, 
                     '❌ Please send a valid URL.\nExample: `https://example.com`',
@@ -58,7 +77,7 @@ module.exports = async (req, res) => {
                 // Update msg.text with formatted URL
                 msg.text = formattedUrl;
                 await defaultFeature.handleDefaultShorten(bot, msg);
-                defaultFeature.setUserState(chatId, null);
+                defaultFeature.setUserState(chatId, null); // Reset state after processing
                 return res.status(200).json({ ok: true });
             } catch (error) {
                 console.error('URL shortening error:', error);
