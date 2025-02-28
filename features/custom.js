@@ -21,8 +21,11 @@ function getUserState(chatId) {
 async function handleCustomStart(bot, chatId) {
     setUserState(chatId, { step: 'waiting_for_url' });
     await bot.sendMessage(chatId,
-        '🎯 *Custom URL Shortener*\n\n' +
-        'Please send the URL you want to shorten:',
+        '🎯 *Custom URL Creation*\n\n' +
+        'Let\'s create your custom short URL!\n\n' +
+        '1️⃣ First, send me the URL you want to shorten\n' +
+        '2️⃣ Then, I\'ll ask for your custom alias\n\n' +
+        'Please send the URL now:',
         { parse_mode: 'Markdown' }
     );
 }
@@ -43,7 +46,8 @@ async function handleCustomInput(bot, msg) {
 
                 if (!validator.isURL(formattedUrl)) {
                     return bot.sendMessage(chatId,
-                        '❌ Invalid URL format. Please send a valid URL:',
+                        '❌ Invalid URL format.\n\n' +
+                        'Please send a valid URL (e.g., `https://example.com`):',
                         { parse_mode: 'Markdown' }
                     );
                 }
@@ -55,8 +59,12 @@ async function handleCustomInput(bot, msg) {
 
                 await bot.sendMessage(chatId,
                     '✅ URL received!\n\n' +
-                    'Now, please send your desired custom alias.\n' +
-                    'It should only contain letters, numbers, hyphens, and underscores.',
+                    '*Now, choose your custom alias:*\n\n' +
+                    '📝 Rules for custom alias:\n' +
+                    '• Letters (a-z, A-Z)\n' +
+                    '• Numbers (0-9)\n' +
+                    '• Hyphens (-) and underscores (_)\n\n' +
+                    'Example: `my-custom-link` or `my_link_123`',
                     { parse_mode: 'Markdown' }
                 );
                 break;
