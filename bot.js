@@ -194,31 +194,44 @@ async function startBot() {
                             await bot.answerCallbackQuery(query.id);
                             const stats = await trackFeature.getUrlStats(alias);
                             
-                            // Format statistics message with updated fields
-                            const statsMessage = `
-📊 *URL Statistics*
+                            // Format browser statistics
+                            const browserStats = Object.entries(stats.browsers)
+                                .map(([browser, count]) => {
+                                    const percentage = Math.round((count/stats.totalClicks) * 100);
+                                    return `   • ${browser}: ${count} (${percentage}%)`;
+                                })
+                                .join('\n');
 
-🔢 *Clicks:*
-   • Total: ${stats.totalClicks}
-   • Unique: ${stats.uniqueClicks}
+                            // Format device statistics
+                            const deviceStats = Object.entries(stats.devices)
+                                .map(([device, count]) => {
+                                    const percentage = Math.round((count/stats.totalClicks) * 100);
+                                    return `   • ${device}: ${count} (${percentage}%)`;
+                                })
+                                .join('\n');
 
-🌐 *Browsers:*
-${Object.entries(stats.browsers)
-    .map(([browser, count]) => `   • ${browser}: ${count} (${Math.round(count/stats.totalClicks*100)}%)`)
-    .join('\n')}
+                            // Format recent clicks
+                            const recentClicksStats = stats.recentClicks
+                                .map(click => `   • ${click.location} - ${click.device} - ${click.time}`)
+                                .join('\n');
 
-📱 *Devices:*
-${Object.entries(stats.devices)
-    .map(([device, count]) => `   • ${device}: ${count} (${Math.round(count/stats.totalClicks*100)}%)`)
-    .join('\n')}
-
-📍 *Recent Clicks:*
-${stats.recentClicks
-    .map(click => `   • ${click.location} - ${click.device} - ${click.time}`)
-    .join('\n')}
-
-⏰ *Last Clicked:* ${stats.lastClicked ? formatTimeAgo(stats.lastClicked) : 'Never'}
-🗓 *Created:* ${formatTimeAgo(stats.created)}`;
+                            // Build complete statistics message
+                            const statsMessage = [
+                                '📊 *URL Statistics*\n',
+                                '🔢 *Clicks:*',
+                                `   • Total: ${stats.totalClicks}`,
+                                `   • Unique: ${stats.uniqueClicks}\n`,
+                                '🌐 *Browsers:*',
+                                browserStats,
+                                '\n📱 *Devices:*',
+                                deviceStats,
+                                '\n📍 *Recent Clicks:*',
+                                recentClicksStats,
+                                '\n⏰ *Last Clicked:*',
+                                `   ${stats.lastClicked ? formatTimeAgo(stats.lastClicked) : 'Never'}`,
+                                '🗓 *Created:*',
+                                `   ${formatTimeAgo(stats.created)}`
+                            ].join('\n');
 
                             await bot.sendMessage(query.message.chat.id, statsMessage, {
                                 parse_mode: 'Markdown',
