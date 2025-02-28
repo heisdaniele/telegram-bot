@@ -16,61 +16,85 @@ async function trackClick(req, urlData) {
             req.connection.remoteAddress
         )?.replace('::ffff:', '') || 'Unknown';
 
-        console.log('Processing IP:', ipAddress);
+        console.log('Raw IP:', ipAddress);
 
         // Get device info
         const userAgent = req.headers['user-agent'];
         const device = getDeviceType(userAgent);
 
-        // Get location using IPInfo
+        // Get location info
         let location = 'Unknown';
-        if (process.env.IPINFO_TOKEN && ipAddress && ipAddress !== 'Unknown') {
+        const IPINFO_TOKEN = process.env.IPINFO_TOKEN;
+
+        if (IPINFO_TOKEN && ipAddress && ipAddress !== 'Unknown') {
             try {
                 const cleanIp = ipAddress.trim().split(':')[0];
-                console.log('Clean IP for location lookup:', cleanIp);
+                console.log('Clean IP:', cleanIp);
 
                 if (cleanIp === '::1' || cleanIp === '127.0.0.1') {
                     location = 'Local Development';
                 } else {
-                    const ipinfoResponse = await axios.get(
-                        `https://ipinfo.io/${cleanIp}/json?token=${process.env.IPINFO_TOKEN}`,
-                        { timeout: 3000 }
-                    );
-                    console.log('IPInfo Response:', ipinfoResponse.data);
+                    const ipinfoUrl = `https://ipinfo.io/${cleanIp}/json`;
+                    const ipinfoHeaders = {
+                        'Authorization': `Bearer ${IPINFO_TOKEN}`,
+                        'Accept': 'application/json'
+                    };
+
+                    console.log('IPInfo Request URL:', ipinfoUrl);
+                    const ipinfoResponse = await axios.get(ipinfoUrl, {
+                        headers: ipinfoHeaders,
+                        timeout: 5000
+                    });
 
                     if (ipinfoResponse.data) {
                         const { city, region, country } = ipinfoResponse.data;
+                        console.log('IPInfo Raw Response:', ipinfoResponse.data);
+                        
                         location = [city, region, country]
                             .filter(Boolean)
-                            .join(', ');
+                            .join(', ') || 'Unknown';
+                            
+                        console.log('Formatted Location:', location);
                     }
                 }
             } catch (ipError) {
-                console.error('IPInfo Error:', ipError.message);
-                if (ipError.response) {
-                    console.error('IPInfo Response:', ipError.response.data);
-                }
+                console.error('IPInfo Error Details:', {
+                    message: ipError.message,
+                    response: ipError.response?.data,
+                    status: ipError.response?.status,
+                    headers: ipError.response?.headers
+                });
             }
+        } else {
+            console.log('IPInfo Skipped:', {
+                hasToken: !!IPINFO_TOKEN,
+                hasIp: !!ipAddress,
+                ip: ipAddress
+            });
         }
 
-        // Insert click data
+        // Track in database
+        const clickData = {
+            url_id: urlData.id,
+            ip_address: ipAddress,
+            user_agent: userAgent,
+            device: device,
+            location: location,
+            clicked_at: new Date().toISOString()
+        };
+
+        console.log('Saving click data:', clickData);
+
         const { error: clickError } = await supabase
             .from('tg_url_clicks')
-            .insert({
-                url_id: urlData.id,
-                ip_address: ipAddress,
-                user_agent: userAgent,
-                device: device,
-                location: location,
-                clicked_at: new Date().toISOString()
-            });
+            .insert(clickData);
 
         if (clickError) {
             throw clickError;
         }
 
         // Update click count
-        const { error: updateError } = await serviceRole
+        await serviceRole
             .from('tg_shortened_urls')
             .update({ 
                 clicks: (urlData.clicks || 0) + 1,
@@ -78,16 +102,7 @@ async function trackClick(req, urlData) {
             })
             .eq('id', urlData.id);
 
-        if (updateError) {
-            throw updateError;
-        }
-
-        console.log('Click tracked successfully:', {
-            ip: ipAddress,
-            device,
-            location,
-            urlId: urlData.id
-        });
+        return { success: true, location };
 
     } catch (error) {
         console.error('Track click error:', error);
