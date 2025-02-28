@@ -1,82 +1,87 @@
 // features/track.js
 const { supabase, serviceRole } = require('../supabaseClient');
 const axios = require('axios');
+const { IPinfoWrapper } = require('node-ipinfo');
+// or if that doesn't work, try:
+// const IPinfoWrapper = require('node-ipinfo').default;
+
+const ipinfo = new IPinfoWrapper(process.env.IPINFO_TOKEN);
 
 async function trackClick(req, urlData) {
     try {
-        // Get IP address with proper fallbacks
-        const ipAddress = req.headers['x-forwarded-for']?.split(',')[0] || 
-                         req.headers['x-real-ip'] || 
-                         req.connection.remoteAddress?.replace('::ffff:', '') ||
-                         'Unknown';
+        const ip = req.headers['x-forwarded-for']?.split(',')[0] || 
+                  req.headers['x-real-ip'] || 
+                  req.connection.remoteAddress?.replace('::ffff:', '');
                   
-        console.log('Raw IP Address:', ipAddress);
+        console.log('Tracking click from IP:', ip);
 
         // Get device info from user agent
         const userAgent = req.headers['user-agent'];
         const device = getDeviceType(userAgent);
 
-        // Get location information
+        // Get user_id using service role client
+        const { data: urlWithUser, error: urlError } = await serviceRole
+            .from('tg_shortened_urls')
+            .select('user_id')
+            .eq('id', urlData.id)
+            .single();
+
+        if (urlError) {
+            console.error('Error fetching user_id:', urlError);
+            return;
+        }
+
+        // Get location info from IPinfo with error handling
         let location = 'Unknown';
-        try {
-            if (process.env.IPINFO_TOKEN && ipAddress) {
-                let ip = ipAddress.split(',')[0].trim().split(':')[0];
-                console.log("Extracted IP for location lookup:", ip);
-
-                if (ip === '::1' || ip === '127.0.0.1') {
-                    location = 'Localhost';
-                } else {
-                    const response = await axios.get(
-                        `https://ipinfo.io/${ip}/json?token=${process.env.IPINFO_TOKEN}`,
-                        { timeout: 5000 } // 5 second timeout
-                    );
-                    console.log("IPInfo API Response:", response.data);
-
-                    if (response && response.data) {
-                        const { city, region, country } = response.data;
-                        location = `${city || ''}${city && region ? ', ' : ''}${region || ''}${(city || region) && country ? ', ' : ''}${country || ''}`;
-                        console.log("Formatted location:", location);
-                    }
-                }
-            }
-        } catch (err) {
-            console.error("IPInfo lookup error:", err.message);
-            if (err.response) {
-                console.error("IPInfo API error details:", err.response.data);
+        if (ip && ip !== 'Unknown' && ip !== '::1') {
+            try {
+                const ipDetails = await ipinfo.lookupIp(ip);
+                console.log('IP Details:', ipDetails);
+                location = ipDetails.city ? 
+                    `${ipDetails.city}, ${ipDetails.country}` : 
+                    ipDetails.country || 'Unknown';
+            } catch (ipError) {
+                console.error('IPinfo lookup failed:', ipError);
             }
         }
 
-        // Track the click in database
-        const { data, error } = await supabase
-            .from('tg_url_clicks')
+        // Record click event using service role client
+        const { error: insertError } = await serviceRole
+            .from('tg_click_events')
             .insert({
                 url_id: urlData.id,
-                ip_address: ipAddress,
+                user_id: urlWithUser.user_id,
+                location,
+                device_type: device,
+                ip_address: ip,
                 user_agent: userAgent,
-                device: device,
-                location: location || 'Unknown',
-                clicked_at: new Date().toISOString()
+                created_at: new Date().toISOString()
             });
 
-        if (error) {
-            console.error('Database tracking error:', error);
-            throw error;
+        if (insertError) {
+            console.error('Click event insert error:', insertError);
+            return;
         }
 
-        console.log('Click tracked successfully:', {
-            ip: ipAddress,
-            device,
-            location,
-            urlId: urlData.id
-        });
+        // Update click count using service role client
+        const { error: updateError } = await serviceRole
+            .from('tg_shortened_urls')
+            .update({ 
+                clicks: (urlData.clicks || 0) + 1,
+                last_clicked: new Date().toISOString()
+            })
+            .eq('id', urlData.id);
 
-        return data;
+        if (updateError) {
+            console.error('Click count update error:', updateError);
+        }
+
     } catch (error) {
-        console.error('Track click error:', error);
-        throw error;
+        console.error('Click tracking error:', error);
     }
 }
 
+// Helper function to determine device type
 function getDeviceType(userAgent) {
     if (!userAgent) return 'Unknown';
     
@@ -118,7 +123,7 @@ function formatTimeAgo(date) {
 async function getUrlStats(shortAlias) {
     try {
         // Get URL data with user_id
-        const { data: urlData, error: urlError } = await serviceRole
+        const { data: urlData, error: urlError } = await serviceRole  // Changed to serviceRole
             .from('tg_shortened_urls')
             .select(`
                 *,
