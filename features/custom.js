@@ -58,10 +58,11 @@ async function handleCustomInput(bot, msg) {
                     return;
                 }
 
-                // Save URL and move to alias step
+                // Move to alias step
                 setUserState(chatId, { 
                     step: 'waiting_for_alias',
-                    url: formattedUrl 
+                    url: formattedUrl,
+                    type: 'custom'
                 });
 
                 await bot.sendMessage(chatId,
@@ -92,7 +93,7 @@ async function handleCustomInput(bot, msg) {
                     return;
                 }
 
-                // Check if alias is available
+                // Check if alias is already taken
                 const { data: existing } = await supabase
                     .from('tg_shortened_urls')
                     .select('id')
@@ -100,68 +101,50 @@ async function handleCustomInput(bot, msg) {
                     .single();
 
                 if (existing) {
-                    return bot.sendMessage(chatId,
-                        '❌ This custom alias is already taken!\n' +
+                    await bot.sendMessage(chatId,
+                        '❌ This alias is already taken!\n' +
                         'Please choose a different alias:',
                         { parse_mode: 'Markdown' }
                     );
+                    return;
                 }
 
-                // Create the shortened URL with new schema fields
+                // Create shortened URL with custom alias
                 const { error } = await supabase
                     .from('tg_shortened_urls')
                     .insert({
                         user_id: msg.from.id,
                         original_url: userState.url,
                         short_alias: customAlias,
-                        created_at: new Date().toISOString(),
-                        clicks: 0, // Initialize clicks counter
-                        last_clicked: null // Initialize last_clicked timestamp
+                        created_at: new Date().toISOString()
                     });
 
-                if (error) {
-                    throw new Error('Failed to save custom URL');
-                }
+                if (error) throw error;
 
-                // Clear user state
-                userStates.delete(chatId);
-
-                // Send success message
-                const displayUrl = `${DOMAIN}/${customAlias}`;
-                const response = `
-✅ *Custom URL Created Successfully!*
-
-🔗 *Original URL:*
-\`${userState.url}\`
-
-✨ *Custom Short URL:*
-\`${displayUrl}\`
-
-📊 Use \`/track ${customAlias}\` to view statistics`;
-
-                await bot.sendMessage(chatId, response, {
-                    parse_mode: 'Markdown',
-                    disable_web_page_preview: true,
-                    reply_markup: {
-                        inline_keyboard: [[
-                            {
-                                text: '🔗 Copy URL',
-                                callback_data: `copy_${customAlias}`
-                            },
-                            {
-                                text: '📊 Track',
-                                callback_data: `track_${customAlias}`
-                            }
-                        ]]
+                // Clear state and send success message
+                setUserState(chatId, null);
+                await bot.sendMessage(chatId,
+                    '✅ *URL shortened successfully!*\n\n' +
+                    `🔗 Your custom URL: \`${process.env.DOMAIN}/${customAlias}\``,
+                    { 
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [[
+                                {
+                                    text: '📊 View Stats',
+                                    callback_data: `track_${customAlias}`
+                                }
+                            ]]
+                        }
                     }
-                });
+                );
                 break;
         }
     } catch (error) {
         console.error('Custom URL error:', error);
-        userStates.delete(chatId);
+        setUserState(chatId, null);
         await bot.sendMessage(chatId,
-            '❌ An error occurred. Please try again with /custom',
+            '❌ An error occurred. Please try again.',
             { parse_mode: 'Markdown' }
         );
     }

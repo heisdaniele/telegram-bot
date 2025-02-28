@@ -137,7 +137,17 @@ async function startBot() {
                         break;
 
                     case '🎯 Custom Alias':
-                        await customFeature.handleCustomStart(bot, chatId);
+                        customFeature.setUserState(chatId, { 
+                            step: 'waiting_for_url',
+                            type: 'custom'  // Add this to differentiate from quick shorten
+                        });
+                        await bot.sendMessage(chatId,
+                            '🎯 *Custom URL Shortener*\n\n' +
+                            '1️⃣ First, send me the URL you want to shorten\n' +
+                            '2️⃣ Then, I\'ll ask for your custom alias\n\n' +
+                            'Please send the URL now:',
+                            { parse_mode: 'Markdown' }
+                        );
                         break;
 
                     case 'ℹ️ Help':
@@ -153,20 +163,17 @@ async function startBot() {
                         break;
 
                     default:
-                        // Handle URL shortening states
-                        if (defaultFeature.getUserState(chatId) === 'WAITING_FOR_URL') {
+                        const customState = customFeature.getUserState(chatId);
+                        if (customState && customState.step) {
+                            await customFeature.handleCustomInput(bot, msg);
+                        } else if (defaultFeature.getUserState(chatId) === 'WAITING_FOR_URL') {
                             defaultFeature.setUserState(chatId, null);
                             await defaultFeature.handleDefaultShorten(bot, msg);
-                        }
-                        // Handle bulk URL states
-                        else if (bulkFeature.getUserState(chatId) === 'WAITING_FOR_URLS') {
+                        } else if (bulkFeature.getUserState(chatId) === 'WAITING_FOR_URLS') {
                             bulkFeature.setUserState(chatId, null);
                             await bulkFeature.handleBulkShorten(bot, msg);
                         }
-                        // Handle custom URL states
-                        else if (customFeature.getUserState(chatId)) {
-                            await customFeature.handleCustomInput(bot, msg);
-                        }
+                        break;
                 }
             } catch (error) {
                 console.error('Error handling message:', error);
