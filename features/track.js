@@ -1,5 +1,5 @@
 // features/track.js
-const { supabase } = require('../supabaseClient');
+const { supabase, serviceRole } = require('../supabaseClient');
 const axios = require('axios');
 
 async function trackClick(req, urlData) {
@@ -118,7 +118,7 @@ function formatTimeAgo(date) {
 async function getUrlStats(shortAlias) {
     try {
         // Get URL data with user_id
-        const { data: urlData, error: urlError } = await serviceRole  // Changed to serviceRole
+        const { data: urlData, error: urlError } = await serviceRole
             .from('tg_shortened_urls')
             .select(`
                 *,
