@@ -67,13 +67,16 @@ async function handleCustomInput(bot, msg) {
 
                 await bot.sendMessage(chatId,
                     '✅ URL received!\n\n' +
-                    '*Now, choose your custom alias:*\n\n' +
-                    '📝 Rules for custom alias:\n' +
+                    'Now, choose your custom alias:\n\n' +
+                    '📝 *Rules for custom alias:*\n' +
                     '• Letters (a-z, A-Z)\n' +
                     '• Numbers (0-9)\n' +
                     '• Hyphens (-) and underscores (_)\n\n' +
                     'Example: `my-custom-link` or `my_link_123`',
-                    { parse_mode: 'Markdown' }
+                    { 
+                        parse_mode: 'Markdown',
+                        disable_web_page_preview: true 
+                    }
                 );
                 break;
 
