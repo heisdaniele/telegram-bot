@@ -113,7 +113,13 @@ module.exports = async (req, res) => {
                 break;
 
             case '🎯 Custom Alias':
-                await customFeature.handleCustomStart(bot, chatId);
+                customFeature.setUserState(chatId, 'WAITING_FOR_CUSTOM_URL');
+                await bot.sendMessage(chatId,
+                    '🎯 *Custom URL Shortening*\n\n' +
+                    'First, send me the URL you want to shorten:\n' +
+                    'Example: `https://example.com`',
+                    { parse_mode: 'Markdown' }
+                );
                 break;
 
             case '📊 Track URL':
@@ -221,6 +227,31 @@ module.exports = async (req, res) => {
                             { parse_mode: 'Markdown' }
                         );
                     }
+                } else if (customFeature.getUserState(chatId) === 'WAITING_FOR_CUSTOM_URL') {
+                    const url = text;
+                    if (!isValidUrl(url)) {
+                        await bot.sendMessage(chatId,
+                            '❌ Please send a valid URL.\nExample: `https://example.com`',
+                            { parse_mode: 'Markdown' }
+                        );
+                        return res.status(200).json({ ok: true });
+                    }
+                    
+                    customFeature.setUserState(chatId, 'WAITING_FOR_ALIAS');
+                    customFeature.setTempUrl(chatId, url); // Add this function to custom feature
+                    
+                    await bot.sendMessage(chatId,
+                        '✨ Great! Now send me your desired custom alias:\n' +
+                        'Example: `mylink`\n\n' +
+                        '• 3-20 characters\n' +
+                        '• Letters, numbers, and hyphens only\n' +
+                        '• No spaces allowed',
+                        { parse_mode: 'Markdown' }
+                    );
+                    return res.status(200).json({ ok: true });
+                } else if (customFeature.getUserState(chatId) === 'WAITING_FOR_ALIAS') {
+                    await customFeature.handleCustomInput(bot, msg);
+                    return res.status(200).json({ ok: true });
                 } else if (customFeature.getUserState(chatId)) {
                     await customFeature.handleCustomInput(bot, msg);
                 } else if (text.startsWith('/custom')) {

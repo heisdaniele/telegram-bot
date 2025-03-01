@@ -9,13 +9,22 @@ const PROTOCOL = 'https';  // Always use HTTPS for production
 
 // User state management
 const userStates = new Map();
+const tempUrls = new Map();
 
 function setUserState(chatId, state) {
-    userStates.set(chatId, state);
+    userStates.set(chatId.toString(), state);
 }
 
 function getUserState(chatId) {
-    return userStates.get(chatId);
+    return userStates.get(chatId.toString());
+}
+
+function setTempUrl(chatId, url) {
+    tempUrls.set(chatId.toString(), url);
+}
+
+function getTempUrl(chatId) {
+    return tempUrls.get(chatId.toString());
 }
 
 async function handleCustomStart(bot, chatId) {
@@ -29,121 +38,90 @@ async function handleCustomStart(bot, chatId) {
 
 async function handleCustomInput(bot, msg) {
     const chatId = msg.chat.id;
-    const userState = getUserState(chatId);
+    const alias = msg.text.trim();
     
-    if (!userState) return;
-
-    try {
-        switch (userState.step) {
-            case 'waiting_for_url':
-                let formattedUrl = msg.text.trim();
-                if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
-                    formattedUrl = 'https://' + formattedUrl;
-                }
-
-                if (!validator.isURL(formattedUrl)) {
-                    return bot.sendMessage(chatId,
-                        '❌ Invalid URL format. Please send a valid URL:',
-                        { parse_mode: 'Markdown' }
-                    );
-                }
-
-                setUserState(chatId, { 
-                    step: 'waiting_for_alias',
-                    url: formattedUrl 
-                });
-
-                await bot.sendMessage(chatId,
-                    '✅ URL received!\n\n' +
-                    'Now, please send your desired custom alias.\n' +
-                    'It should only contain letters, numbers, hyphens, and underscores.',
-                    { parse_mode: 'Markdown' }
-                );
-                break;
-
-            case 'waiting_for_alias':
-                const customAlias = msg.text.trim();
-                
-                if (!/^[a-zA-Z0-9-_]+$/.test(customAlias)) {
-                    return bot.sendMessage(chatId,
-                        '❌ Invalid alias format.\n' +
-                        'Please use only letters, numbers, hyphens, and underscores:',
-                        { parse_mode: 'Markdown' }
-                    );
-                }
-
-                // Check if alias is available
-                const { data: existing } = await supabase
-                    .from('tg_shortened_urls')
-                    .select('id')
-                    .eq('short_alias', customAlias)
-                    .single();
-
-                if (existing) {
-                    return bot.sendMessage(chatId,
-                        '❌ This custom alias is already taken!\n' +
-                        'Please choose a different alias:',
-                        { parse_mode: 'Markdown' }
-                    );
-                }
-
-                // Create the shortened URL with new schema fields
-                const { error } = await supabase
-                    .from('tg_shortened_urls')
-                    .insert({
-                        user_id: msg.from.id,
-                        original_url: userState.url,
-                        short_alias: customAlias,
-                        created_at: new Date().toISOString(),
-                        clicks: 0, // Initialize clicks counter
-                        last_clicked: null // Initialize last_clicked timestamp
-                    });
-
-                if (error) {
-                    throw new Error('Failed to save custom URL');
-                }
-
-                // Clear user state
-                userStates.delete(chatId);
-
-                // Send success message
-                const displayUrl = `${DOMAIN}/${customAlias}`;
-                const response = `
-✅ *Custom URL Created Successfully!*
-
-🔗 *Original URL:*
-\`${userState.url}\`
-
-✨ *Custom Short URL:*
-\`${displayUrl}\`
-
-📊 Use \`/track ${customAlias}\` to view statistics`;
-
-                await bot.sendMessage(chatId, response, {
-                    parse_mode: 'Markdown',
-                    disable_web_page_preview: true,
-                    reply_markup: {
-                        inline_keyboard: [[
-                            {
-                                text: '🔗 Copy URL',
-                                callback_data: `copy_${customAlias}`
-                            },
-                            {
-                                text: '📊 Track',
-                                callback_data: `track_${customAlias}`
-                            }
-                        ]]
-                    }
-                });
-                break;
-        }
-    } catch (error) {
-        console.error('Error in handleCustomInput:', error);
-        userStates.delete(chatId); // Clear state on error
+    // Validate alias format
+    if (!/^[a-zA-Z0-9-]{3,20}$/.test(alias)) {
         await bot.sendMessage(chatId,
-            '❌ An error occurred. Please try again with /custom',
+            '❌ Invalid alias format.\n\n' +
+            '• 3-20 characters\n' +
+            '• Letters, numbers, and hyphens only\n' +
+            '• No spaces allowed\n\n' +
+            'Please try again:',
             { parse_mode: 'Markdown' }
         );
+        return;
+    }
+
+    try {
+        const url = getTempUrl(chatId);
+        if (!url) {
+            throw new Error('No URL found');
+        }
+
+        // Check if alias is available
+        const { data: existing } = await supabase
+            .from('tg_shortened_urls')
+            .select('id')
+            .eq('short_alias', alias)
+            .single();
+
+        if (existing) {
+            await bot.sendMessage(chatId,
+                '❌ This alias is already taken.\nPlease try a different one:',
+                { parse_mode: 'Markdown' }
+            );
+            return;
+        }
+
+        // Create shortened URL with custom alias
+        const { error: insertError } = await supabase
+            .from('tg_shortened_urls')
+            .insert({
+                user_id: msg.from.id,
+                original_url: url,
+                short_alias: alias,
+                created_at: new Date().toISOString(),
+                clicks: 0
+            });
+
+        if (insertError) throw insertError;
+
+        // Clear states
+        setUserState(chatId, null);
+        tempUrls.delete(chatId.toString());
+
+        // Send success message
+        await bot.sendMessage(chatId,
+            `✅ *URL Shortened Successfully!*\n\n` +
+            `🔗 *Original URL:*\n\`${url}\`\n\n` +
+            `✨ *Short URL:*\n\`${DOMAIN}/${alias}\`\n\n` +
+            `📊 Use \`/track ${alias}\` to view statistics`,
+            {
+                parse_mode: 'Markdown',
+                disable_web_page_preview: true,
+                reply_markup: {
+                    inline_keyboard: [[
+                        {
+                            text: '🔗 Copy URL',
+                            callback_data: `copy_${alias}`
+                        },
+                        {
+                            text: '📊 Track',
+                            callback_data: `track_${alias}`
+                        }
+                    ]]
+                }
+            }
+        );
+    } catch (error) {
+        console.error('Custom alias error:', error);
+        await bot.sendMessage(chatId,
+            '❌ Failed to create custom URL. Please try again.',
+            { parse_mode: 'Markdown' }
+        );
+        setUserState(chatId, null);
+        tempUrls.delete(chatId.toString());
     }
 }
 
@@ -268,5 +246,7 @@ module.exports = {
     handleCustomAlias,
     handleCustomInput,
     setUserState,
-    getUserState
+    getUserState,
+    setTempUrl,
+    getTempUrl
 };
