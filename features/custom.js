@@ -259,11 +259,6 @@ async function handleCustomAlias(bot, msg) {
                     callback_data: `copy_${customAlias}`
                 },
                 {
-                {
-                    text: '🔗 Copy URL',
-                    callback_data: `copy_${customAlias}`
-                },
-                {
                     text: '📊 Track',
                     callback_data: `track_${customAlias}`
                 }
