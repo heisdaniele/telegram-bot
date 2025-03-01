@@ -201,34 +201,7 @@ async function startBot() {
                             await bot.answerCallbackQuery(query.id);
                             const stats = await trackFeature.getUrlStats(alias);
                             
-                            // Format browser statistics
-                            const browserStats = formatStatistics('browsers', stats.browsers);
-
-                            // Format device statistics
-                            const deviceStats = formatStatistics('devices', stats.devices);
-
-                            // Format recent clicks
-                            const recentClicksStats = stats.recentClicks
-                                .map(click => `   • ${click.location} - ${click.device} - ${click.time}`)
-                                .join('\n');
-
-                            // Build complete statistics message
-                            const statsMessage = [
-                                '📊 *URL Statistics*\n',
-                                '🔢 *Clicks:*',
-                                `   • Total: ${stats.totalClicks}`,
-                                `   • Unique: ${stats.uniqueClicks}\n`,
-                                '🌐 *Browsers:*',
-                                browserStats,
-                                '\n📱 *Devices:*',
-                                deviceStats,
-                                '\n📍 *Recent Clicks:*',
-                                recentClicksStats,
-                                '\n⏰ *Last Clicked:*',
-                                `   ${stats.lastClicked ? formatTimeAgo(stats.lastClicked) : 'Never'}`,
-                                '🗓 *Created:*',
-                                `   ${formatTimeAgo(stats.created)}`
-                            ].join('\n');
+                            const statsMessage = await formatStatsMessage(stats);
 
                             await bot.sendMessage(query.message.chat.id, statsMessage, {
                                 parse_mode: 'Markdown',
@@ -254,11 +227,17 @@ async function startBot() {
                         await bot.answerCallbackQuery(query.id);
                         await trackFeature.handleListUrls(bot, query.message);
                         break;
+
+                    default:
+                        await bot.answerCallbackQuery(query.id, {
+                            text: '❌ Unknown action',
+                            show_alert: true
+                        });
                 }
             } catch (error) {
                 console.error('Callback query error:', error);
                 await bot.answerCallbackQuery(query.id, {
-                    text: '❌ An error occurred while fetching statistics',
+                    text: '❌ An error occurred',
                     show_alert: true
                 });
             }
