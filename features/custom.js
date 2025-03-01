@@ -66,15 +66,17 @@ async function handleCustomInput(bot, msg) {
                 });
 
                 await bot.sendMessage(chatId,
-                    '✅ URL received!\n\n' +
-                    'Now, choose your custom alias:\n\n' +
-                    '📝 *Rules for custom alias:*\n' +
-                    '• Letters (a-z, A-Z)\n' +
+                    '✅ URL received\n\n' +
+                    '*Enter your custom alias*\n\n' +
+                    'Rules:\n' +
+                    '• Letters (A-Z, a-z)\n' +
                     '• Numbers (0-9)\n' +
-                    '• Hyphens (-) and underscores (_)\n\n' +
-                    'Example: `my-custom-link` or `my_link_123`',
+                    '• Symbols (\\-, \\_)\n\n' +
+                    'Examples:\n' +
+                    '`my\\-link`\n' +
+                    '`custom\\_123`',
                     { 
-                        parse_mode: 'Markdown',
+                        parse_mode: 'MarkdownV2',
                         disable_web_page_preview: true 
                     }
                 );
