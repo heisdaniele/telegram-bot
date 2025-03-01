@@ -116,7 +116,16 @@ async function startBot() {
                         break;
 
                     case '📋 My URLs':
-                        await trackFeature.handleListUrls(bot, msg);
+                        try {
+                            await defaultFeature.handleListUrls(bot, msg);
+                        } catch (error) {
+                            console.error('List URLs error:', error);
+                            await bot.sendMessage(msg.chat.id,
+                                '❌ Failed to fetch your URLs.\n' +
+                                'Please try again later.',
+                                { parse_mode: 'Markdown' }
+                            );
+                        }
                         break;
 
                     case '🔗 Quick Shorten':
@@ -244,8 +253,16 @@ async function startBot() {
                         break;
 
                     case 'refresh_urls':
-                        await bot.answerCallbackQuery(query.id);
-                        await trackFeature.handleListUrls(bot, query.message);
+                        try {
+                            await bot.answerCallbackQuery(query.id);
+                            await defaultFeature.handleListUrls(bot, query.message);
+                        } catch (error) {
+                            console.error('Refresh URLs error:', error);
+                            await bot.answerCallbackQuery(query.id, {
+                                text: '❌ Failed to refresh URLs',
+                                show_alert: true
+                            });
+                        }
                         break;
                 }
             } catch (error) {
