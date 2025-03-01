@@ -184,52 +184,47 @@ async function handleDefaultShorten(bot, msg) {
  * Handle listing user's URLs
  */
 async function handleListUrls(bot, msg) {
+    const userId = msg.from.id;
+    console.log(`Fetching URLs for user: ${userId}`);
+    
     try {
-        console.log('Fetching URLs for user:', msg.chat.id);
-        const { data, error } = await supabase
-            .from('urls')
-            .select('*')
-            .eq('user_id', msg.chat.id)
-            .order('created_at', { ascending: false });
-
-        if (error) {
-            console.error('Database error:', error);
-            throw error;
-        }
-
-        if (!data || data.length === 0) {
-            await bot.sendMessage(msg.chat.id,
-                '📝 You haven\'t shortened any URLs yet.\n' +
-                'Use *Quick Shorten* to create your first short URL!',
+        const query = `
+            SELECT short_alias, original_url, clicks, created_at 
+            FROM public.tg_shortened_urls 
+            WHERE user_id = $1 
+            ORDER BY created_at DESC 
+            LIMIT 10
+        `;
+        
+        const result = await db.query(query, [userId]);
+        
+        if (result.rows.length === 0) {
+            await bot.sendMessage(msg.chat.id, 
+                "📭 You haven't shortened any URLs yet.\n" +
+                "Use '🔗 Quick Shorten' to create your first short link!",
                 { parse_mode: 'Markdown' }
             );
             return;
         }
 
-        const urlList = data.map((url, index) => 
-            `${index + 1}. *${url.alias}*\n` +
-            `   • Original: ${url.original_url}\n` +
-            `   • Created: ${formatTimeAgo(url.created_at)}\n` +
-            `   • Clicks: ${url.clicks || 0}`
-        ).join('\n\n');
+        const urlList = result.rows.map((row, index) => {
+            const shortUrl = `${process.env.DOMAIN}/${row.short_alias}`;
+            return `${index + 1}. \`${shortUrl}\`\n` +
+                   `   Original: ${row.original_url.substring(0, 40)}${row.original_url.length > 40 ? '...' : ''}\n` +
+                   `   Clicks: ${row.clicks} | Created: ${formatTimeAgo(row.created_at)}`;
+        }).join('\n\n');
 
         await bot.sendMessage(msg.chat.id,
-            '📋 *Your Shortened URLs*\n\n' + urlList,
-            {
-                parse_mode: 'Markdown',
-                reply_markup: {
-                    inline_keyboard: [[
-                        {
-                            text: '🔄 Refresh List',
-                            callback_data: 'refresh_urls'
-                        }
-                    ]]
-                }
-            }
+            `📋 *Your Recent URLs:*\n\n${urlList}`,
+            { parse_mode: 'Markdown' }
         );
+
     } catch (error) {
         console.error('handleListUrls error:', error);
-        throw error;
+        await bot.sendMessage(msg.chat.id,
+            '❌ Failed to fetch your URLs. Please try again later.',
+            { parse_mode: 'Markdown' }
+        );
     }
 }
 

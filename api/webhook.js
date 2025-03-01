@@ -19,6 +19,8 @@ function isValidUrl(string) {
 }
 
 module.exports = async (req, res) => {
+    // Declare msg at the top level of the function
+    let msg;
     try {
         if (req.method !== 'POST') {
             return res.status(405).json({ error: 'Method not allowed' });
@@ -31,7 +33,7 @@ module.exports = async (req, res) => {
             return res.status(400).json({ error: 'Invalid update format' });
         }
 
-        const msg = update.message;
+        msg = update.message;  // Assign to the outer msg variable
         const chatId = msg.chat.id;
         const text = msg.text;
 
@@ -213,7 +215,7 @@ module.exports = async (req, res) => {
         console.error('Webhook error:', {
             error: error.message,
             stack: error.stack,
-            userId: msg?.from?.id,
+            userId: msg?.from?.id,  // Now msg will be safely accessible here
             chatId: msg?.chat?.id
         });
         return res.status(500).json({ 
