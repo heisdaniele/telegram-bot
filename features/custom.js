@@ -255,6 +255,8 @@ async function handleCustomAlias(bot, msg) {
         reply_markup: {
             inline_keyboard: [[
                 {
+                {
+                {
                     text: '🔗 Copy URL',
                     callback_data: `copy_${customAlias}`
                 },
