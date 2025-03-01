@@ -42,7 +42,7 @@ module.exports = async (req, res) => {
         const userState = defaultFeature.getUserState(chatId);
         const isUrl = text && text.match(/^https?:\/\//i);
         
-        if (userState === 'WAITING_FOR_URL' || isUrl) {
+        if (userState === 'WAITING_FOR_URL' && !customFeature.getUserState(chatId)) {
             let formattedUrl = text;
 
             // Validate URL
@@ -154,7 +154,9 @@ module.exports = async (req, res) => {
                 break;
 
             default:
-                if (text.startsWith('/track ')) {
+                if (customFeature.getUserState(chatId)) {
+                    await customFeature.handleCustomInput(bot, msg);
+                } else if (text.startsWith('/track ')) {
                     try {
                         const alias = text.split(' ')[1];
                         if (!alias) {
@@ -203,8 +205,6 @@ module.exports = async (req, res) => {
                     }
                 } else if (text.startsWith('/urls')) {
                     await defaultFeature.handleListUrls(bot, msg);
-                } else if (customFeature.getUserState(chatId)) {
-                    await customFeature.handleCustomInput(bot, msg);
                 } else if (text.startsWith('/custom')) {
                     customFeature.setUserState(chatId, { step: 'waiting_for_url' });
                     await customFeature.handleCustomStart(bot, chatId);
