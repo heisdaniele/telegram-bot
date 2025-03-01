@@ -3,7 +3,6 @@ const { supabase } = require('../supabaseClient');
 const { nanoid } = require('nanoid');
 const validator = require('validator');
 const { formatTimeAgo } = require('./track');
-const { connect } = require('../db');
 
 // Update the domain constant
 const DOMAIN = process.env.NODE_ENV === 'production' 
