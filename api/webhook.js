@@ -132,7 +132,19 @@ module.exports = async (req, res) => {
                 break;
 
             case '📋 My URLs':
-                await defaultFeature.handleListUrls(bot, msg);
+                try {
+                    await defaultFeature.handleListUrls(bot, msg);
+                } catch (error) {
+                    console.error('My URLs error:', {
+                        error: error.message,
+                        userId: msg?.from?.id,
+                        chatId: msg?.chat?.id
+                    });
+                    await bot.sendMessage(msg.chat.id,
+                        '❌ Failed to fetch your URLs. Please try again later.',
+                        { parse_mode: 'Markdown' }
+                    );
+                }
                 break;
 
             case 'ℹ️ Help':
@@ -196,7 +208,19 @@ module.exports = async (req, res) => {
                         );
                     }
                 } else if (text.startsWith('/urls')) {
-                    await defaultFeature.handleListUrls(bot, msg);
+                    try {
+                        await defaultFeature.handleListUrls(bot, msg);
+                    } catch (error) {
+                        console.error('URLs command error:', {
+                            error: error.message,
+                            userId: msg?.from?.id,
+                            chatId: msg?.chat?.id
+                        });
+                        await bot.sendMessage(msg.chat.id,
+                            '❌ Failed to fetch your URLs. Please try again later.',
+                            { parse_mode: 'Markdown' }
+                        );
+                    }
                 } else if (customFeature.getUserState(chatId)) {
                     await customFeature.handleCustomInput(bot, msg);
                 } else if (text.startsWith('/custom')) {

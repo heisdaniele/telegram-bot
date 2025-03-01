@@ -3,6 +3,7 @@ const { supabase } = require('../supabaseClient');
 const { nanoid } = require('nanoid');
 const validator = require('validator');
 const { formatTimeAgo } = require('./track');
+const { connect } = require('../db');
 
 // Update the domain constant
 const DOMAIN = process.env.NODE_ENV === 'production' 
@@ -184,43 +185,53 @@ async function handleDefaultShorten(bot, msg) {
  * Handle listing user's URLs
  */
 async function handleListUrls(bot, msg) {
-    const userId = msg.from.id;
-    console.log(`Fetching URLs for user: ${userId}`);
-    
     try {
-        const query = `
-            SELECT short_alias, original_url, clicks, created_at 
-            FROM public.tg_shortened_urls 
-            WHERE user_id = $1 
-            ORDER BY created_at DESC 
-            LIMIT 10
-        `;
-        
-        const result = await db.query(query, [userId]);
-        
-        if (result.rows.length === 0) {
-            await bot.sendMessage(msg.chat.id, 
-                "📭 You haven't shortened any URLs yet.\n" +
-                "Use '🔗 Quick Shorten' to create your first short link!",
+        // Query Supabase for user's URLs, ordered by creation date
+        const { data: urls, error } = await supabase
+            .from('tg_shortened_urls')
+            .select('*')
+            .eq('user_id', msg.from.id)
+            .order('created_at', { ascending: false })
+            .limit(10);
+
+        if (error) {
+            console.error('Supabase query error:', error);
+            throw error;
+        }
+
+        if (!urls || urls.length === 0) {
+            await bot.sendMessage(msg.chat.id,
+                '🔍 You haven\'t shortened any URLs yet.\n' +
+                'Send me any URL to shorten it!',
                 { parse_mode: 'Markdown' }
             );
             return;
         }
 
-        const urlList = result.rows.map((row, index) => {
-            const shortUrl = `${process.env.DOMAIN}/${row.short_alias}`;
-            return `${index + 1}. \`${shortUrl}\`\n` +
-                   `   Original: ${row.original_url.substring(0, 40)}${row.original_url.length > 40 ? '...' : ''}\n` +
-                   `   Clicks: ${row.clicks} | Created: ${formatTimeAgo(row.created_at)}`;
-        }).join('\n\n');
+        // Format URLs with click statistics
+        const urlList = urls.map(url => 
+            `• \`${DOMAIN}/${url.short_alias}\`\n` +
+            `  ↳ ${url.original_url}\n` +
+            `  📊 Clicks: ${url.clicks} | Last clicked: ${url.last_clicked ? formatTimeAgo(new Date(url.last_clicked)) : 'Never'}`
+        ).join('\n\n');
 
         await bot.sendMessage(msg.chat.id,
-            `📋 *Your Recent URLs:*\n\n${urlList}`,
-            { parse_mode: 'Markdown' }
+            '📋 *Your Recent URLs:*\n\n' + urlList,
+            { 
+                parse_mode: 'Markdown',
+                disable_web_page_preview: true,
+                reply_markup: {
+                    inline_keyboard: [[
+                        {
+                            text: '🔄 Refresh List',
+                            callback_data: 'refresh_urls'
+                        }
+                    ]]
+                }
+            }
         );
-
     } catch (error) {
-        console.error('handleListUrls error:', error);
+        console.error('List URLs error:', error);
         await bot.sendMessage(msg.chat.id,
             '❌ Failed to fetch your URLs. Please try again later.',
             { parse_mode: 'Markdown' }
