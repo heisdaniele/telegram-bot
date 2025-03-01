@@ -61,9 +61,20 @@ async function testConnection() {
             throw new Error(`Click events table access error: ${clickError.message}`);
         }
 
+        // Test users table access
+        const { data: userData, error: userError } = await supabase
+            .from('tg_users')
+            .select('id')
+            .limit(1);
+
+        if (userError) {
+            throw new Error(`Users table access error: ${userError.message}`);
+        }
+
         console.log('✓ Supabase connection successful');
         console.log('✓ URL table accessible');
         console.log('✓ Click events table accessible');
+        console.log('✓ Users table accessible');
         
         return true;
     } catch (error) {
