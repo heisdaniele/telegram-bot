@@ -21,82 +21,58 @@ function getUserState(chatId) {
 async function handleCustomStart(bot, chatId) {
     setUserState(chatId, { step: 'waiting_for_url' });
     await bot.sendMessage(chatId,
-        '🎯 *Custom URL Creation*\n\n' +
-        'Let\'s create your custom short URL!\n\n' +
-        '1️⃣ First, send me the URL you want to shorten\n' +
-        '2️⃣ Then, I\'ll ask for your custom alias\n\n' +
-        'Please send the URL now:',
+        '🎯 *Custom URL Shortener*\n\n' +
+        'Please send the URL you want to shorten:',
         { parse_mode: 'Markdown' }
     );
 }
-
-// Update the handleCustomInput function in custom.js
 
 async function handleCustomInput(bot, msg) {
     const chatId = msg.chat.id;
     const userState = getUserState(chatId);
     
-    if (!userState || !userState.step) return;
+    if (!userState) return;
 
     try {
         switch (userState.step) {
             case 'waiting_for_url':
                 let formattedUrl = msg.text.trim();
-                
-                // Add protocol if missing
                 if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
                     formattedUrl = 'https://' + formattedUrl;
                 }
 
-                // Validate URL
                 if (!validator.isURL(formattedUrl)) {
-                    await bot.sendMessage(chatId,
-                        '❌ Invalid URL format.\n\n' +
-                        'Please send a valid URL (e.g., `https://example.com`):',
+                    return bot.sendMessage(chatId,
+                        '❌ Invalid URL format. Please send a valid URL:',
                         { parse_mode: 'Markdown' }
                     );
-                    return;
                 }
 
-                // Move to alias step with properly escaped Markdown
                 setUserState(chatId, { 
                     step: 'waiting_for_alias',
-                    url: formattedUrl,
-                    type: 'custom'
+                    url: formattedUrl 
                 });
 
                 await bot.sendMessage(chatId,
-                    '*URL received successfully\\!*\n\n' +
-                    '*Please choose your custom alias:*\n\n' +
-                    'Allowed characters:\n' +
-                    '• Letters: a\\-z, A\\-Z\n' +
-                    '• Numbers: 0\\-9\n' +
-                    '• Symbols: \\- and \\_\n\n' +
-                    'Example: `my\\-custom\\-link`',
-                    { 
-                        parse_mode: 'MarkdownV2',
-                        disable_web_page_preview: true 
-                    }
+                    '✅ URL received!\n\n' +
+                    'Now, please send your desired custom alias.\n' +
+                    'It should only contain letters, numbers, hyphens, and underscores.',
+                    { parse_mode: 'Markdown' }
                 );
                 break;
 
             case 'waiting_for_alias':
-                const customAlias = msg.text.trim().toLowerCase();
+                const customAlias = msg.text.trim();
                 
-                // Validate alias format
-                if (!customAlias || !/^[a-zA-Z0-9-_]+$/.test(customAlias)) {
-                    await bot.sendMessage(chatId,
-                        '❌ Invalid alias format.\n\n' +
-                        'Please use only:\n' +
-                        '• Letters (a-z, A-Z)\n' +
-                        '• Numbers (0-9)\n' +
-                        '• Hyphens (-) and underscores (_)',
+                if (!/^[a-zA-Z0-9-_]+$/.test(customAlias)) {
+                    return bot.sendMessage(chatId,
+                        '❌ Invalid alias format.\n' +
+                        'Please use only letters, numbers, hyphens, and underscores:',
                         { parse_mode: 'Markdown' }
                     );
-                    return;
                 }
 
-                // Check if alias is already taken
+                // Check if alias is available
                 const { data: existing } = await supabase
                     .from('tg_shortened_urls')
                     .select('id')
@@ -104,50 +80,68 @@ async function handleCustomInput(bot, msg) {
                     .single();
 
                 if (existing) {
-                    await bot.sendMessage(chatId,
-                        '❌ This alias is already taken!\n' +
+                    return bot.sendMessage(chatId,
+                        '❌ This custom alias is already taken!\n' +
                         'Please choose a different alias:',
                         { parse_mode: 'Markdown' }
                     );
-                    return;
                 }
 
-                // Create shortened URL with custom alias
+                // Create the shortened URL with new schema fields
                 const { error } = await supabase
                     .from('tg_shortened_urls')
                     .insert({
                         user_id: msg.from.id,
                         original_url: userState.url,
                         short_alias: customAlias,
-                        created_at: new Date().toISOString()
+                        created_at: new Date().toISOString(),
+                        clicks: 0, // Initialize clicks counter
+                        last_clicked: null // Initialize last_clicked timestamp
                     });
 
-                if (error) throw error;
+                if (error) {
+                    throw new Error('Failed to save custom URL');
+                }
 
-                // Clear state and send success message
-                setUserState(chatId, null);
-                await bot.sendMessage(chatId,
-                    '✅ *URL shortened successfully!*\n\n' +
-                    `🔗 Your custom URL: \`${process.env.DOMAIN}/${customAlias}\``,
-                    { 
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            inline_keyboard: [[
-                                {
-                                    text: '📊 View Stats',
-                                    callback_data: `track_${customAlias}`
-                                }
-                            ]]
-                        }
+                // Clear user state
+                userStates.delete(chatId);
+
+                // Send success message
+                const displayUrl = `${DOMAIN}/${customAlias}`;
+                const response = `
+✅ *Custom URL Created Successfully!*
+
+🔗 *Original URL:*
+\`${userState.url}\`
+
+✨ *Custom Short URL:*
+\`${displayUrl}\`
+
+📊 Use \`/track ${customAlias}\` to view statistics`;
+
+                await bot.sendMessage(chatId, response, {
+                    parse_mode: 'Markdown',
+                    disable_web_page_preview: true,
+                    reply_markup: {
+                        inline_keyboard: [[
+                            {
+                                text: '🔗 Copy URL',
+                                callback_data: `copy_${customAlias}`
+                            },
+                            {
+                                text: '📊 Track',
+                                callback_data: `track_${customAlias}`
+                            }
+                        ]]
                     }
-                );
+                });
                 break;
         }
     } catch (error) {
-        console.error('Custom URL error:', error);
-        setUserState(chatId, null);
+        console.error('Error in handleCustomInput:', error);
+        userStates.delete(chatId); // Clear state on error
         await bot.sendMessage(chatId,
-            '❌ An error occurred. Please try again.',
+            '❌ An error occurred. Please try again with /custom',
             { parse_mode: 'Markdown' }
         );
     }
@@ -254,8 +248,6 @@ async function handleCustomAlias(bot, msg) {
         disable_web_page_preview: true,
         reply_markup: {
             inline_keyboard: [[
-                {
-                {
                 {
                     text: '🔗 Copy URL',
                     callback_data: `copy_${customAlias}`

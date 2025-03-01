@@ -40,17 +40,9 @@ module.exports = async (req, res) => {
 
         // Handle states and URL detection
         const userState = defaultFeature.getUserState(chatId);
-        const customState = customFeature.getUserState(chatId);
         const isUrl = text && text.match(/^https?:\/\//i);
-
-        // First check if we're in a custom URL flow
-        if (customState && customState.step === 'waiting_for_url') {
-            await customFeature.handleCustomInput(bot, msg);
-            return res.status(200).json({ ok: true });
-        }
-
-        // Then handle regular URL shortening
-        if (userState === 'WAITING_FOR_URL' && !customState) {
+        
+        if (userState === 'WAITING_FOR_URL' || isUrl) {
             let formattedUrl = text;
 
             // Validate URL
@@ -63,9 +55,10 @@ module.exports = async (req, res) => {
             }
 
             try {
+                // Update msg.text with formatted URL
                 msg.text = formattedUrl;
                 await defaultFeature.handleDefaultShorten(bot, msg);
-                defaultFeature.setUserState(chatId, null);
+                defaultFeature.setUserState(chatId, null); // Reset state
                 return res.status(200).json({ ok: true });
             } catch (error) {
                 console.error('URL shortening error:', error);
@@ -118,15 +111,7 @@ module.exports = async (req, res) => {
                 break;
 
             case '🎯 Custom Alias':
-                customFeature.setUserState(chatId, { step: 'waiting_for_url' });
-                await bot.sendMessage(chatId,
-                    '🎯 *Custom URL Creation*\n\n' +
-                    'Let\'s create your custom short URL!\n\n' +
-                    '1️⃣ First, send me the URL you want to shorten\n' +
-                    '2️⃣ Then, I\'ll ask for your custom alias\n\n' +
-                    'Please send the URL now:',
-                    { parse_mode: 'Markdown' }
-                );
+                await customFeature.handleCustomStart(bot, chatId);
                 break;
 
             case '📊 Track URL':
@@ -161,11 +146,7 @@ module.exports = async (req, res) => {
                 break;
 
             default:
-                const customState = customFeature.getUserState(chatId);
-                
-                if (customState && customState.step) {
-                    await customFeature.handleCustomInput(bot, msg);
-                } else if (text.startsWith('/track ')) {
+                if (text.startsWith('/track ')) {
                     try {
                         const alias = text.split(' ')[1];
                         if (!alias) {
@@ -176,49 +157,31 @@ module.exports = async (req, res) => {
                             return res.status(200).json({ ok: true });
                         }
 
-                        // Get URL stats with improved error handling
-                        try {
-                            const stats = await trackFeature.getUrlStats(alias);
-                            
-                            if (!stats || !stats.totalClicks) {
-                                await bot.sendMessage(chatId,
-                                    '❌ No statistics found for this alias. Make sure:\n' +
-                                    '• The alias exists\n' +
-                                    '• You are the owner of this URL\n' +
-                                    '• The URL has been clicked at least once',
-                                    { parse_mode: 'Markdown' }
-                                );
-                                return res.status(200).json({ ok: true });
-                            }
-
-                            const statsMessage = await formatStatsMessage(stats);
-                            
-                            await bot.sendMessage(chatId, statsMessage, {
-                                parse_mode: 'Markdown',
-                                reply_markup: {
-                                    inline_keyboard: [[
-                                        {
-                                            text: '🔄 Refresh Stats',
-                                            callback_data: `track_${alias}`
-                                        }
-                                    ]]
-                                }
-                            });
-                        } catch (lookupError) {
-                            console.error('URL lookup failed:', {
-                                error: lookupError,
-                                shortAlias: alias,
-                                timestamp: new Date().toISOString()
-                            });
-                            
+                        
+                        // Get URL stats with error handling
+                        const stats = await trackFeature.getUrlStats(alias);
+                        if (!stats) {
                             await bot.sendMessage(chatId,
-                                '❌ URL not found or access denied.\n' +
-                                'Please check if:\n' +
-                                '• The alias is correct\n' +
-                                '• You own this shortened URL',
+                                '❌ URL not found. Please check the alias and try again.',
                                 { parse_mode: 'Markdown' }
                             );
+                            return res.status(200).json({ ok: true });
                         }
+
+                        // Format statistics safely
+                        const statsMessage = await formatStatsMessage(stats);
+                        
+                        await bot.sendMessage(chatId, statsMessage, {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                inline_keyboard: [[
+                                    {
+                                        text: '🔄 Refresh Stats',
+                                        callback_data: `track_${alias}`
+                                    }
+                                ]]
+                            }
+                        });
                     } catch (error) {
                         console.error('Track command error:', {
                             error: error.message,
@@ -226,23 +189,22 @@ module.exports = async (req, res) => {
                             chatId
                         });
                         await bot.sendMessage(chatId,
-                            '❌ An error occurred while fetching statistics.\n' +
-                            'Please try again later.',
+                            '❌ Failed to fetch statistics. Please try again later.',
                             { parse_mode: 'Markdown' }
                         );
                     }
                 } else if (text.startsWith('/urls')) {
                     await defaultFeature.handleListUrls(bot, msg);
+                } else if (customFeature.getUserState(chatId)) {
+                    await customFeature.handleCustomInput(bot, msg);
                 } else if (text.startsWith('/custom')) {
-                    customFeature.setUserState(chatId, { step: 'waiting_for_url' });
-                    await customFeature.handleCustomStart(bot, chatId);
-                } else if (!isUrl) {
+                    await customFeature.handleCustomAlias(bot, msg);
+                } else {
                     await bot.sendMessage(chatId,
                         '❓ Please use the keyboard buttons or commands.\nType /start to see available options.',
                         { parse_mode: 'Markdown' }
                     );
                 }
-                break;
         }
 
         return res.status(200).json({ ok: true });
