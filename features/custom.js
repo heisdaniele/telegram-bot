@@ -58,7 +58,7 @@ async function handleCustomInput(bot, msg) {
                     return;
                 }
 
-                // Move to alias step
+                // Move to alias step with properly escaped Markdown
                 setUserState(chatId, { 
                     step: 'waiting_for_alias',
                     url: formattedUrl,
@@ -66,10 +66,13 @@ async function handleCustomInput(bot, msg) {
                 });
 
                 await bot.sendMessage(chatId,
-                    '✅ URL received\n\n' +
-                    'Enter your custom alias\\:\n' +
-                    '• Use letters, numbers, \\- and \\_\n' +
-                    'Example: `mylink123`',
+                    '*URL received successfully\\!*\n\n' +
+                    '*Please choose your custom alias:*\n\n' +
+                    'Allowed characters:\n' +
+                    '• Letters: a\\-z, A\\-Z\n' +
+                    '• Numbers: 0\\-9\n' +
+                    '• Symbols: \\- and \\_\n\n' +
+                    'Example: `my\\-custom\\-link`',
                     { 
                         parse_mode: 'MarkdownV2',
                         disable_web_page_preview: true 
@@ -251,6 +254,11 @@ async function handleCustomAlias(bot, msg) {
         disable_web_page_preview: true,
         reply_markup: {
             inline_keyboard: [[
+                {
+                    text: '🔗 Copy URL',
+                    callback_data: `copy_${customAlias}`
+                },
+                {
                 {
                     text: '🔗 Copy URL',
                     callback_data: `copy_${customAlias}`
