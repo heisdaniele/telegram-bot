@@ -176,31 +176,49 @@ module.exports = async (req, res) => {
                             return res.status(200).json({ ok: true });
                         }
 
-                        
-                        // Get URL stats with error handling
-                        const stats = await trackFeature.getUrlStats(alias);
-                        if (!stats) {
+                        // Get URL stats with improved error handling
+                        try {
+                            const stats = await trackFeature.getUrlStats(alias);
+                            
+                            if (!stats || !stats.totalClicks) {
+                                await bot.sendMessage(chatId,
+                                    '❌ No statistics found for this alias. Make sure:\n' +
+                                    '• The alias exists\n' +
+                                    '• You are the owner of this URL\n' +
+                                    '• The URL has been clicked at least once',
+                                    { parse_mode: 'Markdown' }
+                                );
+                                return res.status(200).json({ ok: true });
+                            }
+
+                            const statsMessage = await formatStatsMessage(stats);
+                            
+                            await bot.sendMessage(chatId, statsMessage, {
+                                parse_mode: 'Markdown',
+                                reply_markup: {
+                                    inline_keyboard: [[
+                                        {
+                                            text: '🔄 Refresh Stats',
+                                            callback_data: `track_${alias}`
+                                        }
+                                    ]]
+                                }
+                            });
+                        } catch (lookupError) {
+                            console.error('URL lookup failed:', {
+                                error: lookupError,
+                                shortAlias: alias,
+                                timestamp: new Date().toISOString()
+                            });
+                            
                             await bot.sendMessage(chatId,
-                                '❌ URL not found. Please check the alias and try again.',
+                                '❌ URL not found or access denied.\n' +
+                                'Please check if:\n' +
+                                '• The alias is correct\n' +
+                                '• You own this shortened URL',
                                 { parse_mode: 'Markdown' }
                             );
-                            return res.status(200).json({ ok: true });
                         }
-
-                        // Format statistics safely
-                        const statsMessage = await formatStatsMessage(stats);
-                        
-                        await bot.sendMessage(chatId, statsMessage, {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                inline_keyboard: [[
-                                    {
-                                        text: '🔄 Refresh Stats',
-                                        callback_data: `track_${alias}`
-                                    }
-                                ]]
-                            }
-                        });
                     } catch (error) {
                         console.error('Track command error:', {
                             error: error.message,
@@ -208,7 +226,8 @@ module.exports = async (req, res) => {
                             chatId
                         });
                         await bot.sendMessage(chatId,
-                            '❌ Failed to fetch statistics. Please try again later.',
+                            '❌ An error occurred while fetching statistics.\n' +
+                            'Please try again later.',
                             { parse_mode: 'Markdown' }
                         );
                     }
