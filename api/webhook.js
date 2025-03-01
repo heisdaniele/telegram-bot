@@ -41,29 +41,7 @@ module.exports = async (req, res) => {
         console.log(`Current state: ${defaultFeature.getUserState(chatId)}`);
 
         // First, handle custom alias states
-        if (customFeature.getUserState(chatId) === 'WAITING_FOR_CUSTOM_URL') {
-            const url = text;
-            if (!isValidUrl(url)) {
-                await bot.sendMessage(chatId,
-                    '❌ Please send a valid URL.\nExample: `https://example.com`',
-                    { parse_mode: 'Markdown' }
-                );
-                return res.status(200).json({ ok: true });
-            }
-            
-            customFeature.setUserState(chatId, 'WAITING_FOR_ALIAS');
-            customFeature.setTempUrl(chatId, url);
-            
-            await bot.sendMessage(chatId,
-                '✨ Great! Now send me your desired custom alias:\n' +
-                'Example: `mylink`\n\n' +
-                '• 3-20 characters\n' +
-                '• Letters, numbers, and hyphens only\n' +
-                '• No spaces allowed',
-                { parse_mode: 'Markdown' }
-            );
-            return res.status(200).json({ ok: true });
-        } else if (customFeature.getUserState(chatId) === 'WAITING_FOR_ALIAS') {
+        if (customFeature.getUserState(chatId)) {
             await customFeature.handleCustomInput(bot, msg);
             return res.status(200).json({ ok: true });
         }
@@ -175,6 +153,28 @@ module.exports = async (req, res) => {
                         chatId: msg?.chat?.id
                     });
                     await bot.sendMessage(msg.chat.id,
+                        '❌ Failed to fetch your URLs. Please try again later.',
+                        { parse_mode: 'Markdown' }
+                    );
+                }
+                break;
+
+            case 'ℹ️ Help':
+                await bot.sendMessage(chatId,
+                    '*Available Commands*\n\n' +
+                    '🔗 `Quick Shorten` - Simple URL shortening\n' +
+                    '📚 `Bulk Shorten` - Multiple URLs at once\n' +
+                    '🎯 `Custom Alias` - Choose your own alias\n' +
+                    '📊 `/track` - View URL statistics\n' +
+                    '📋 `/urls` - List your shortened URLs',
+                    { parse_mode: 'Markdown' }
+                );
+                break;
+
+            default:
+                if (text.startsWith('/track ')) {
+                    try {
+                        const alias = text.split(' ')[1];
                         '❌ Failed to fetch your URLs. Please try again later.',
                         { parse_mode: 'Markdown' }
                     );
