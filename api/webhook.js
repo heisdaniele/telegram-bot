@@ -54,6 +54,16 @@ module.exports = async (req, res) => {
             let formattedUrl = text;
 
             // Validate URL
+// Place this check before the URL validation
+if (customFeature.getUserState(chatId)) {
+    await customFeature.handleCustomInput(bot, msg);
+    return res.status(200).json({ ok: true });
+}
+
+// Then handle other URL states and URL detection
+const userState = defaultFeature.getUserState(chatId);
+const isUrl = text && text.match(/^https?:\/\//i);
+
             if (!isValidUrl(formattedUrl)) {
                 await bot.sendMessage(chatId, 
                     '❌ Please send a valid URL.\nExample: `https://example.com`',
@@ -175,28 +185,6 @@ module.exports = async (req, res) => {
                 if (text.startsWith('/track ')) {
                     try {
                         const alias = text.split(' ')[1];
-                        '❌ Failed to fetch your URLs. Please try again later.',
-                        { parse_mode: 'Markdown' }
-                    );
-                }
-                break;
-
-            case 'ℹ️ Help':
-                await bot.sendMessage(chatId,
-                    '*Available Commands*\n\n' +
-                    '🔗 `Quick Shorten` - Simple URL shortening\n' +
-                    '📚 `Bulk Shorten` - Multiple URLs at once\n' +
-                    '🎯 `Custom Alias` - Choose your own alias\n' +
-                    '📊 `/track` - View URL statistics\n' +
-                    '📋 `/urls` - List your shortened URLs',
-                    { parse_mode: 'Markdown' }
-                );
-                break;
-
-            default:
-                if (text.startsWith('/track ')) {
-                    try {
-                        const alias = text.split(' ')[1];
                         if (!alias) {
                             await bot.sendMessage(chatId,
                                 '❌ Please provide an alias.\nExample: `/track mylink`',
@@ -205,7 +193,6 @@ module.exports = async (req, res) => {
                             return res.status(200).json({ ok: true });
                         }
 
-                        
                         // Get URL stats with error handling
                         const stats = await trackFeature.getUrlStats(alias);
                         if (!stats) {
@@ -231,11 +218,7 @@ module.exports = async (req, res) => {
                             }
                         });
                     } catch (error) {
-                        console.error('Track command error:', {
-                            error: error.message,
-                            alias,
-                            chatId
-                        });
+                        console.error('Track command error:', error);
                         await bot.sendMessage(chatId,
                             '❌ Failed to fetch statistics. Please try again later.',
                             { parse_mode: 'Markdown' }

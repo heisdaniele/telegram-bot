@@ -42,7 +42,6 @@ async function handleCustomInput(bot, msg) {
     const text = msg.text.trim();
     const state = getUserState(chatId);
 
-    // Handle URL input step
     if (state === 'WAITING_FOR_CUSTOM_URL') {
         let formattedUrl = text;
         if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
@@ -71,13 +70,8 @@ async function handleCustomInput(bot, msg) {
         return;
     }
 
-    // Handle alias input step
     if (state === 'WAITING_FOR_ALIAS') {
         const alias = text;
-        
-        // Rest of the existing handleCustomInput logic for alias validation
-        const chatId = msg.chat.id;
-        const alias = msg.text.trim();
         
         // Validate alias format
         if (!/^[a-zA-Z0-9-]{3,20}$/.test(alias)) {
