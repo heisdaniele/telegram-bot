@@ -40,9 +40,17 @@ module.exports = async (req, res) => {
 
         // Handle states and URL detection
         const userState = defaultFeature.getUserState(chatId);
+        const customState = customFeature.getUserState(chatId);
         const isUrl = text && text.match(/^https?:\/\//i);
-        
-        if (userState === 'WAITING_FOR_URL' && !customFeature.getUserState(chatId)) {
+
+        // First check if we're in a custom URL flow
+        if (customState && customState.step === 'waiting_for_url') {
+            await customFeature.handleCustomInput(bot, msg);
+            return res.status(200).json({ ok: true });
+        }
+
+        // Then handle regular URL shortening
+        if (userState === 'WAITING_FOR_URL' && !customState) {
             let formattedUrl = text;
 
             // Validate URL
@@ -55,10 +63,9 @@ module.exports = async (req, res) => {
             }
 
             try {
-                // Update msg.text with formatted URL
                 msg.text = formattedUrl;
                 await defaultFeature.handleDefaultShorten(bot, msg);
-                defaultFeature.setUserState(chatId, null); // Reset state
+                defaultFeature.setUserState(chatId, null);
                 return res.status(200).json({ ok: true });
             } catch (error) {
                 console.error('URL shortening error:', error);
@@ -154,7 +161,9 @@ module.exports = async (req, res) => {
                 break;
 
             default:
-                if (customFeature.getUserState(chatId)) {
+                const customState = customFeature.getUserState(chatId);
+                
+                if (customState && customState.step) {
                     await customFeature.handleCustomInput(bot, msg);
                 } else if (text.startsWith('/track ')) {
                     try {
@@ -208,12 +217,13 @@ module.exports = async (req, res) => {
                 } else if (text.startsWith('/custom')) {
                     customFeature.setUserState(chatId, { step: 'waiting_for_url' });
                     await customFeature.handleCustomStart(bot, chatId);
-                } else {
+                } else if (!isUrl) {
                     await bot.sendMessage(chatId,
                         '❓ Please use the keyboard buttons or commands.\nType /start to see available options.',
                         { parse_mode: 'Markdown' }
                     );
                 }
+                break;
         }
 
         return res.status(200).json({ ok: true });
