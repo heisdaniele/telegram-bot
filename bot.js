@@ -2,6 +2,7 @@ require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const { supabase, testConnection } = require('./supabaseClient');
 const { nanoid } = require('nanoid');
+const { formatTimeAgo } = require('./features/track');
 
 // Load feature modules
 const bulkFeature = require('./features/bulk');

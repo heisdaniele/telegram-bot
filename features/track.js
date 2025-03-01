@@ -129,9 +129,11 @@ function getDeviceType(userAgent) {
     }
 }
 
-function formatTimeAgo(date) {
-    const seconds = Math.floor((new Date() - new Date(date)) / 1000);
-    
+function formatTimeAgo(dateString) {
+    const date = new Date(dateString);
+    const now = new Date();
+    const seconds = Math.floor((now - date) / 1000);
+
     const intervals = {
         year: 31536000,
         month: 2592000,
@@ -144,11 +146,11 @@ function formatTimeAgo(date) {
     for (const [unit, secondsInUnit] of Object.entries(intervals)) {
         const interval = Math.floor(seconds / secondsInUnit);
         if (interval >= 1) {
-            return `${interval} ${unit}${interval === 1 ? '' : 's'} ago`;
+            return interval === 1 ? `1 ${unit} ago` : `${interval} ${unit}s ago`;
         }
     }
-    
-    return 'just now';
+
+    return 'Just now';
 }
 
 async function getUrlStats(shortAlias) {

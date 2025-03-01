@@ -2,6 +2,7 @@
 const { supabase } = require('../supabaseClient');
 const { nanoid } = require('nanoid');
 const validator = require('validator');
+const { formatTimeAgo } = require('./track');
 
 // Update the domain constant
 const DOMAIN = process.env.NODE_ENV === 'production' 
@@ -184,70 +185,51 @@ async function handleDefaultShorten(bot, msg) {
  */
 async function handleListUrls(bot, msg) {
     try {
-        const chatId = msg.chat.id;
-
-        // Get user's URLs with updated schema
-        const { data: urls, error } = await supabase
-            .from('tg_shortened_urls')
-            .select(`
-                *,
-                tg_click_events (
-                    count
-                )
-            `)
-            .eq('user_id', chatId)
+        console.log('Fetching URLs for user:', msg.chat.id);
+        const { data, error } = await supabase
+            .from('urls')
+            .select('*')
+            .eq('user_id', msg.chat.id)
             .order('created_at', { ascending: false });
 
         if (error) {
-            console.error('Error fetching URLs:', error);
+            console.error('Database error:', error);
             throw error;
         }
 
-        if (!urls || urls.length === 0) {
-            await bot.sendMessage(chatId,
-                '❌ You haven\'t created any short URLs yet.\n' +
-                'Use the *Quick Shorten* button to create one!',
+        if (!data || data.length === 0) {
+            await bot.sendMessage(msg.chat.id,
+                '📝 You haven\'t shortened any URLs yet.\n' +
+                'Use *Quick Shorten* to create your first short URL!',
                 { parse_mode: 'Markdown' }
             );
             return;
         }
 
-        // Format URLs list with inline buttons and updated click stats
-        const message = '*Your Shortened URLs:*\n\n' +
-            urls.map((url, index) => {
-                const displayUrl = `${PROTOCOL}://${DOMAIN}/${url.short_alias}`;
-                return `${index + 1}. \`${displayUrl}\`\n` +
-                    `   📊 Clicks: ${url.clicks || 0}\n` +
-                    `   ⏰ Last Click: ${url.last_clicked ? formatTimeAgo(url.last_clicked) : 'Never'}\n` +
-                    `   🔗 Original: ${url.original_url.substring(0, 50)}${url.original_url.length > 50 ? '...' : ''}\n`;
-            }).join('\n');
+        const urlList = data.map((url, index) => 
+            `${index + 1}. *${url.alias}*\n` +
+            `   • Original: ${url.original_url}\n` +
+            `   • Created: ${formatTimeAgo(url.created_at)}\n` +
+            `   • Clicks: ${url.clicks || 0}`
+        ).join('\n\n');
 
-        // Create inline keyboard with track buttons
-        const keyboard = urls.map(url => ([{
-            text: `📊 Track ${url.short_alias}`,
-            callback_data: `track_${url.short_alias}`
-        }]));
-
-        // Add refresh button at the bottom
-        keyboard.push([{
-            text: '🔄 Refresh List',
-            callback_data: 'refresh_urls'
-        }]);
-
-        await bot.sendMessage(chatId, message, {
-            parse_mode: 'Markdown',
-            disable_web_page_preview: true,
-            reply_markup: {
-                inline_keyboard: keyboard
-            }
-        });
-
-    } catch (error) {
-        console.error('Error handling list URLs:', error);
         await bot.sendMessage(msg.chat.id,
-            '❌ Failed to fetch your URLs. Please try again.',
-            { parse_mode: 'Markdown' }
+            '📋 *Your Shortened URLs*\n\n' + urlList,
+            {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [[
+                        {
+                            text: '🔄 Refresh List',
+                            callback_data: 'refresh_urls'
+                        }
+                    ]]
+                }
+            }
         );
+    } catch (error) {
+        console.error('handleListUrls error:', error);
+        throw error;
     }
 }
 
