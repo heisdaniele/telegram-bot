@@ -200,24 +200,33 @@ async function handleListUrls(bot, msg) {
 
         if (!urls || urls.length === 0) {
             await bot.sendMessage(msg.chat.id,
-                '🔍 You haven\'t shortened any URLs yet.\n' +
-                'Send me any URL to shorten it!',
-                { parse_mode: 'Markdown' }
+                '🔍 You haven\'t shortened any URLs yet.\nSend me any URL to shorten it!',
+                { parse_mode: 'HTML' }
             );
             return;
         }
 
+        // Helper function to escape HTML special characters
+        const escapeHTML = (text) => {
+            return text
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        };
+
         // Format URLs with click statistics
         const urlList = urls.map(url => 
-            `• \`${DOMAIN}/${url.short_alias}\`\n` +
-            `  ↳ ${url.original_url}\n` +
-            `  📊 Clicks: ${url.clicks} | Last clicked: ${url.last_clicked ? formatTimeAgo(new Date(url.last_clicked)) : 'Never'}`
+            `• <code>${DOMAIN}/${url.short_alias}</code>\n` +
+            `  ↳ ${escapeHTML(url.original_url)}\n` +
+            `  📊 Clicks: ${url.clicks} | Last clicked: ${
+                url.last_clicked ? formatTimeAgo(new Date(url.last_clicked)) : 'Never'
+            }`
         ).join('\n\n');
 
         await bot.sendMessage(msg.chat.id,
-            '📋 *Your Recent URLs:*\n\n' + urlList,
+            '📋 <b>Your Recent URLs:</b>\n\n' + urlList,
             { 
-                parse_mode: 'Markdown',
+                parse_mode: 'HTML',
                 disable_web_page_preview: true,
                 reply_markup: {
                     inline_keyboard: [[
@@ -233,7 +242,7 @@ async function handleListUrls(bot, msg) {
         console.error('List URLs error:', error);
         await bot.sendMessage(msg.chat.id,
             '❌ Failed to fetch your URLs. Please try again later.',
-            { parse_mode: 'Markdown' }
+            { parse_mode: 'HTML' }
         );
     }
 }
