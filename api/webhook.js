@@ -1,10 +1,27 @@
 const TelegramBot = require('node-telegram-bot-api');
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
+
+// Validate environment variables
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) {
+    console.error('Missing Supabase credentials:', {
+        url: !!process.env.SUPABASE_URL,
+        key: !!process.env.SUPABASE_KEY
+    });
+    throw new Error('Missing required Supabase environment variables');
+}
+
+// Initialize Supabase client
 const supabase = createClient(
     process.env.SUPABASE_URL,
-    process.env.SUPABASE_ANON_KEY
+    process.env.SUPABASE_KEY,
+    {
+        auth: {
+            persistSession: false
+        }
+    }
 );
+
 const defaultFeature = require('../features/default');
 const customFeature = require('../features/custom');
 const bulkFeature = require('../features/bulk');
