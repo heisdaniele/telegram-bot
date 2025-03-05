@@ -32,128 +32,30 @@ const handleUpdate = async (update) => {
     try {
         const msg = update.message || update.callback_query?.message;
         const chatId = msg.chat.id;
-        const text = msg.text || '';  // Ensure text is not undefined
+        const text = msg.text || '';
 
-        // Log incoming message for debugging
-        console.log('Received message:', {
+        // Debug logging
+        console.log('Handling update:', {
             chatId,
             text,
-            type: msg?.entities?.[0]?.type
+            state: defaultFeature.getUserState(chatId)
         });
 
-        // Handle states
-        const userState = defaultFeature.getUserState(chatId);
-        if (userState === 'WAITING_FOR_URL') {
-            await handleUrlShortening(msg);
+        // Handle URL shortening state
+        if (defaultFeature.getUserState(chatId) === 'WAITING_FOR_URL') {
+            await defaultFeature.handleDefaultShorten(bot, msg);
             return;
         }
 
-        // Handle /track and /urls commands
-        if (text.startsWith('/track')) {
-            await trackFeature.handleTrackCommand(bot, msg);
-            return;
+        // Handle keyboard commands with exact matching
+        switch(text) {
+            case '🔗 Quick Shorten':
+                await defaultFeature.handleDefaultShorten(bot, msg);
+                break;
+            // ...other cases...
         }
-
-        // Make command matching more robust
-        switch(text.toLowerCase()) {
-            case '/start':
-                await bot.sendMessage(chatId,
-                    '👋 *Welcome to URL Shortener Bot!*\n\n' +
-                    'Choose an option:',
-                    {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            keyboard: [
-                                ['🔗 Quick Shorten', '📚 Bulk Shorten'],
-                                ['🎯 Custom Alias', '📊 Track URL'],
-                                ['📋 My URLs', 'ℹ️ Help']
-                            ],
-                            resize_keyboard: true
-                        }
-                    }
-                );
-                break;
-
-            case '📊 track url':
-                await bot.sendMessage(chatId,
-                    '*URL Tracking*\n\n' +
-                    'Send the alias of the URL you want to track:\n' +
-                    'Example: `/track your-alias`',
-                    { parse_mode: 'Markdown' }
-                );
-                break;
-
-            case '📋 my urls':
-                try {
-                    await defaultFeature.handleListUrls(bot, msg);
-                } catch (error) {
-                    console.error('List URLs error:', error);
-                    await bot.sendMessage(chatId,
-                        '❌ Failed to fetch your URLs.\n' +
-                        'Please try again later.',
-                        { parse_mode: 'Markdown' }
-                    );
-                }
-                break;
-
-            case '🔗 quick shorten':
-                defaultFeature.setUserState(chatId, 'WAITING_FOR_URL');
-                await bot.sendMessage(chatId, 
-                    '📝 *Send me the URL to shorten:*',
-                    { parse_mode: 'Markdown' }
-                );
-                break;
-
-            case '📚 bulk shorten':
-                bulkFeature.setUserState(chatId, 'WAITING_FOR_URLS');
-                await bot.sendMessage(chatId,
-                    '*Bulk URL Shortener*\n\n' +
-                    'Send multiple URLs separated by spaces:',
-                    { parse_mode: 'Markdown' }
-                );
-                break;
-
-            case '🎯 custom alias':
-                await customFeature.handleCustomStart(bot, chatId);
-                break;
-
-            case 'ℹ️ help':
-                await bot.sendMessage(chatId, 
-                    '*Available Commands:*\n\n' +
-                    '🔗 Quick Shorten - Simple URL shortening\n' +
-                    '📚 Bulk Shorten - Multiple URLs at once\n' +
-                    '🎯 Custom Alias - Choose your own alias\n' +
-                    '📊 /track - View URL statistics\n' +
-                    '📋 /urls - List your shortened URLs',
-                    { parse_mode: 'Markdown' }
-                );
-                break;
-
-            default:
-                // Handle URL shortening states
-                if (userState === 'WAITING_FOR_URL') {
-                    defaultFeature.setUserState(chatId, null);
-                    await defaultFeature.handleDefaultShorten(bot, msg);
-                }
-                // Handle bulk URL states
-                else if (bulkFeature.getUserState(chatId) === 'WAITING_FOR_URLS') {
-                    bulkFeature.setUserState(chatId, null);
-                    await bulkFeature.handleBulkShorten(bot, msg);
-                }
-                // Handle custom URL states
-                else if (customFeature.getUserState(chatId)) {
-                    await customFeature.handleCustomInput(bot, msg);
-                }
-        }
-
     } catch (error) {
-        console.error('Error in handleUpdate:', error);
-        if (msg?.chat?.id) {
-            await bot.sendMessage(msg.chat.id, 
-                '❌ An error occurred. Please try again.',
-                { parse_mode: 'Markdown' }
-            );
-        }
+        console.error('Update handler error:', error);
     }
 };
 

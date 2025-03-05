@@ -4,29 +4,46 @@ const { nanoid } = require('nanoid');
 const validator = require('validator');
 const { formatTimeAgo } = require('./track');
 
+// Add this at the top of your file
+const DEBUG = true;
+
+function debugLog(...args) {
+    if (DEBUG) {
+        console.log('[DEBUG]', ...args);
+    }
+}
+
 // Update the domain constant
 const DOMAIN = process.env.NODE_ENV === 'production' 
     ? 'telegram-bot-six-theta.vercel.app'
     : 'localhost:3000';
 const PROTOCOL = 'https';  // Required for Telegram inline buttons
 
-// User state management (optional)
+// Enhance state management
 const userStates = new Map();
+
 function setUserState(chatId, state) {
-  userStates.set(chatId.toString(), state);
-  console.log(`State set for ${chatId}: ${state}`);
-}
-function getUserState(chatId) {
-  return userStates.get(chatId.toString());
+    userStates.set(chatId.toString(), state);
+    console.log(`State set for ${chatId}: ${state}`); // Debug log
+    return state;
 }
 
-// Validate and format URL
+function getUserState(chatId) {
+    const state = userStates.get(chatId.toString());
+    console.log(`Getting state for ${chatId}: ${state}`); // Debug log
+    return state;
+}
+
+// Update validateAndFormatUrl with logging
 function validateAndFormatUrl(url) {
-  let formattedUrl = url.trim();
-  if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
-    formattedUrl = 'https://' + formattedUrl;
-  }
-  return validator.isURL(formattedUrl) ? formattedUrl : null;
+    debugLog('Validating URL:', url);
+    let formattedUrl = url.trim();
+    if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
+        formattedUrl = 'https://' + formattedUrl;
+    }
+    const isValid = validator.isURL(formattedUrl);
+    debugLog('URL validation result:', { formattedUrl, isValid });
+    return isValid ? formattedUrl : null;
 }
 
 // Ensure the Telegram user exists in tg_users
@@ -73,74 +90,72 @@ async function ensureUserExists(user) {
   }
 }
 
-// Handle default “shorten” command in Telegram
+// Update handleDefaultShorten to handle both direct URLs and keyboard button input
 async function handleDefaultShorten(bot, msg) {
-  const chatId = msg.chat.id;
+    const chatId = msg.chat.id;
+    
+    try {
+        // Check if we're in URL waiting state
+        if (getUserState(chatId) !== 'WAITING_FOR_URL') {
+            setUserState(chatId, 'WAITING_FOR_URL');
+            await bot.sendMessage(chatId,
+                '📝 *Send me the URL to shorten:*',
+                { parse_mode: 'Markdown' }
+            );
+            return;
+        }
 
-  try {
-    // 1. Extract the URL from the message text
-    let url = '';
-    const parts = msg.text.split(' ');
+        // Reset state immediately
+        setUserState(chatId, null);
 
-    // If user typed `/shorten something`
-    if (parts[0] === '/shorten') {
-      if (parts.length < 2) {
-        return bot.sendMessage(chatId,
-          '❌ *Usage:* `/shorten <url>`\nExample: `/shorten example.com`',
-          { parse_mode: 'Markdown' }
-        );
-      }
-      url = parts.slice(1).join(' '); // everything after /shorten
-    } else {
-      // If user just typed the URL without /shorten
-      url = msg.text;
-    }
+        // Extract and validate URL
+        const url = msg.text.trim();
+        const formattedUrl = validateAndFormatUrl(url);
+        
+        if (!formattedUrl) {
+            await bot.sendMessage(chatId,
+                '❌ Invalid URL. Please send a valid URL (e.g. `example.com`).',
+                { parse_mode: 'Markdown' }
+            );
+            return;
+        }
 
-    // 2. Validate + format URL
-    const formattedUrl = validateAndFormatUrl(url);
-    if (!formattedUrl) {
-      return bot.sendMessage(chatId,
-        '❌ Invalid URL. Please send a valid URL (e.g. `example.com`).',
-        { parse_mode: 'Markdown' }
-      );
-    }
+        // 3. Ensure user exists in tg_users
+        const userExists = await ensureUserExists(msg.from);
+        if (!userExists) {
+            console.error('Failed to ensure user exists for Telegram ID:', msg.from.id);
+            return bot.sendMessage(chatId,
+                '❌ Unable to verify your user account. Please try again.',
+                { parse_mode: 'Markdown' }
+            );
+        }
 
-    // 3. Ensure user exists in tg_users
-    const userExists = await ensureUserExists(msg.from);
-    if (!userExists) {
-      console.error('Failed to ensure user exists for Telegram ID:', msg.from.id);
-      return bot.sendMessage(chatId,
-        '❌ Unable to verify your user account. Please try again.',
-        { parse_mode: 'Markdown' }
-      );
-    }
+        // 4. Generate short alias with proper URL formatting
+        const shortAlias = nanoid(6).toLowerCase();
+        const shortUrl = `${PROTOCOL}://${DOMAIN}/${shortAlias}`;
+        const displayUrl = `${DOMAIN}/${shortAlias}`;  // For display purposes
 
-    // 4. Generate short alias with proper URL formatting
-    const shortAlias = nanoid(6).toLowerCase();
-    const shortUrl = `${PROTOCOL}://${DOMAIN}/${shortAlias}`;
-    const displayUrl = `${DOMAIN}/${shortAlias}`;  // For display purposes
+        // 5. Insert into database with new schema
+        const { data, error: insertError } = await supabase
+          .from('tg_shortened_urls')
+          .insert({
+            user_id: msg.from.id,
+            original_url: formattedUrl,
+            short_alias: shortAlias,
+            created_at: new Date().toISOString(),
+            clicks: 0, // Initialize clicks counter
+            last_clicked: null // Initialize last_clicked timestamp
+          })
+          .select()
+          .single();
 
-    // 5. Insert into database with new schema
-    const { data, error: insertError } = await supabase
-      .from('tg_shortened_urls')
-      .insert({
-        user_id: msg.from.id,
-        original_url: formattedUrl,
-        short_alias: shortAlias,
-        created_at: new Date().toISOString(),
-        clicks: 0, // Initialize clicks counter
-        last_clicked: null // Initialize last_clicked timestamp
-      })
-      .select()
-      .single();
+        if (insertError) {
+          console.error('Database insertion error:', insertError);
+          throw new Error('Failed to save URL');
+        }
 
-    if (insertError) {
-      console.error('Database insertion error:', insertError);
-      throw new Error('Failed to save URL');
-    }
-
-    // 6. Construct success message
-    const response = `
+        // 6. Construct success message
+        const response = `
 ✅ *URL Shortened Successfully!*
 
 🔗 *Original URL:*
@@ -151,33 +166,34 @@ async function handleDefaultShorten(bot, msg) {
 
 📊 Use \`/track ${shortAlias}\` to view statistics`;
 
-    // 7. Send message with working inline buttons
-    await bot.sendMessage(chatId, response, {
-      parse_mode: 'Markdown',
-      disable_web_page_preview: true,
-      reply_markup: {
-        inline_keyboard: [[
-          {
-            text: '🔗 Copy URL',
-            callback_data: `copy_${shortAlias}`
-          },
-          {
-            text: '📊 Track',
-            callback_data: `track_${shortAlias}`
+        // 7. Send message with working inline buttons
+        await bot.sendMessage(chatId, response, {
+          parse_mode: 'Markdown',
+          disable_web_page_preview: true,
+          reply_markup: {
+            inline_keyboard: [[
+              {
+                text: '🔗 Copy URL',
+                callback_data: `copy_${shortAlias}`
+              },
+              {
+                text: '📊 Track',
+                callback_data: `track_${shortAlias}`
+              }
+            ]]
           }
-        ]]
-      }
-    });
+        });
 
-    console.log(`URL shortened: ${displayUrl} (user: ${msg.from.id})`);
+        console.log(`URL shortened: ${displayUrl} (user: ${msg.from.id})`);
 
-  } catch (error) {
-    console.error('Error in handleDefaultShorten:', error);
-    await bot.sendMessage(chatId,
-      '❌ Failed to shorten URL. Please try again.',
-      { parse_mode: 'Markdown' }
-    );
-  }
+    } catch (error) {
+        console.error('Error in handleDefaultShorten:', error);
+        setUserState(chatId, null); // Reset state on error
+        await bot.sendMessage(chatId,
+            '❌ Failed to shorten URL. Please try again.',
+            { parse_mode: 'Markdown' }
+        );
+    }
 }
 
 /**
