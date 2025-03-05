@@ -17,8 +17,8 @@ if (!BOT_TOKEN) {
 }
 
 const BOT_URL = process.env.NODE_ENV === 'production' 
-  ? `https://telegram-bot-six-theta.vercel.app/webhook`
-  : 'http://localhost:3000/webhook';
+    ? `https://${process.env.DOMAIN}/api/webhook`  // Note the /api prefix
+    : 'http://localhost:3000/api/webhook';
 
 // Bot initialization
 async function startBot() {
@@ -34,8 +34,15 @@ async function startBot() {
 
         // Set webhook only in production
         if (process.env.NODE_ENV === 'production') {
-            await bot.setWebHook(BOT_URL);
-            console.log('✓ Webhook set to:', BOT_URL);
+            const webhookOptions = {
+                max_connections: 100,
+                allowed_updates: ['message', 'callback_query'],
+                secret_token: process.env.WEBHOOK_SECRET
+            };
+            
+            await bot.setWebHook(`https://midget.pro/bot`, webhookOptions);
+            const webhookInfo = await bot.getWebhookInfo();
+            console.log('✓ Webhook info:', webhookInfo);
         }
 
         // Error handling

@@ -48,79 +48,48 @@ function isValidUrl(string) {
 }
 
 module.exports = async (req, res) => {
-    // Basic request validation
+    console.log('Webhook request received:', {
+        timestamp: new Date().toISOString(),
+        method: req.method,
+        path: req.url,
+        secret: req.headers['x-telegram-bot-api-secret-token']?.substring(0, 8) + '...',
+    });
+
     if (req.method !== 'POST') {
+        console.log('Invalid method:', req.method);
         return res.status(405).json({ error: 'Method not allowed' });
     }
 
-    // Security check
-    if (!validateWebhook(req)) {
-        console.error('Invalid webhook secret token');
+    // Validate webhook secret
+    const token = req.headers['x-telegram-bot-api-secret-token'];
+    if (token !== process.env.WEBHOOK_SECRET) {
+        console.error('Invalid webhook secret');
         return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    // Declare msg at the top level of the function
-    let msg;
     try {
         const update = req.body;
-        
-        // Validate update format
-        if (!update || (!update.message && !update.callback_query)) {
-            return res.status(400).json({ error: 'Invalid update format' });
-        }
+        console.log('Update received:', {
+            updateId: update.update_id,
+            messageId: update.message?.message_id,
+            chatId: update.message?.chat?.id,
+            text: update.message?.text
+        });
 
-        // Get message from update
-        msg = update.message || update.callback_query?.message;
+        // Process the update
+        const msg = update.message || update.callback_query?.message;
         if (!msg?.chat?.id) {
+            console.error('Invalid message format');
             return res.status(400).json({ error: 'Invalid message format' });
         }
 
-        // Rate limiting
-        const userId = msg.from?.id;
-        if (userId && !checkRateLimit(userId)) {
-            await bot.sendMessage(msg.chat.id, 
-                '⚠️ Rate limit exceeded. Please try again later.',
-                { parse_mode: 'Markdown' }
-            );
-            return res.status(429).json({ error: 'Rate limit exceeded' });
-        }
-
-        // Log incoming update
-        console.log('Received update:', {
-            updateId: update.update_id,
-            userId: msg.from?.id,
-            chatId: msg.chat.id,
-            messageType: update.message ? 'message' : 'callback_query'
-        });
-
-        // Handle different types of updates
-        if (update.callback_query) {
-            await handleCallbackQuery(update.callback_query, bot);
-        } else if (msg.photo) {
-            await handlePhoto(msg, bot);
-        } else if (msg.document) {
-            await handleDocument(msg, bot);
-        } else {
-            // Handle text messages and commands
-            await handleMessage(msg, bot);
-        }
-
+        // Handle the message using your bot instance
+        await handleUpdate(update);
+        
         return res.status(200).json({ ok: true });
-
     } catch (error) {
-        console.error('Webhook error:', {
-            error: error.message,
-            stack: error.stack,
-            userId: msg?.from?.id,  // Now msg will be safely accessible here
-            chatId: msg?.chat?.id
-        });
-
-        // Don't expose error details in production
-        return res.status(500).json({ 
-            error: process.env.NODE_ENV === 'production' 
-                ? 'Internal server error' 
-                : error.message 
-        });
+        console.error('Webhook error:', error);
+        return res.status(500).json({ error: 'Internal server error' });
     }
 };
 
