@@ -113,12 +113,16 @@ export default async function handler(req, res) {
         timestamp: new Date().toISOString(),
         method: req.method,
         path: req.url,
-        secret: req.headers['x-telegram-bot-api-secret-token']?.substring(0, 8) + '...',
+        headers: {
+            'content-type': req.headers['content-type'],
+            'x-telegram-bot-api-secret-token': req.headers['x-telegram-bot-api-secret-token']?.substring(0, 8) + '...'
+        },
+        body: JSON.stringify(req.body).substring(0, 200) + '...'
     });
 
     // Validate webhook secret
     const token = req.headers['x-telegram-bot-api-secret-token'];
-    if (token !== process.env.WEBHOOK_SECRET) {
+    if (!token || token !== process.env.WEBHOOK_SECRET) {
         console.error('Invalid webhook secret');
         return res.status(403).json({ error: 'Unauthorized' });
     }
@@ -126,33 +130,28 @@ export default async function handler(req, res) {
     try {
         const update = req.body;
         
-        // Add validation for update object
+        // Enhanced validation for update object
         if (!update || typeof update !== 'object') {
             console.error('Invalid update format:', update);
             return res.status(400).json({ error: 'Invalid update format' });
         }
 
-        console.log('Update received:', {
-            updateId: update.update_id,
-            messageId: update.message?.message_id,
-            chatId: update.message?.chat?.id,
-            text: update.message?.text
-        });
-
-        // Process the update
+        // Validate required fields
         const msg = update.message || update.callback_query?.message;
-        if (!msg?.chat?.id) {
-            console.error('Invalid message format');
-            return res.status(400).json({ error: 'Invalid message format' });
+        if (!msg?.chat?.id || !msg?.from?.id) {
+            console.error('Missing required fields:', {
+                chatId: msg?.chat?.id,
+                fromId: msg?.from?.id
+            });
+            return res.status(400).json({ error: 'Missing required fields' });
         }
 
-        // Handle the message using your bot instance
+        // Process the update
         await handleUpdate(update);
         
         return res.status(200).json({ ok: true });
     } catch (error) {
         console.error('Webhook error:', error);
-        // Don't expose error details in production
         return res.status(500).json({ error: 'Internal server error' });
     }
 }
