@@ -19,6 +19,13 @@
     {
       "src": "/(.*)",
       "dest": "/api/redirect.js"
+    },
+    {
+      "src": "/api/webhook",
+      "methods": ["POST"],
+      "headers": {
+        "Access-Control-Allow-Origin": "*"
+      }
     }
   ],
   "env": {

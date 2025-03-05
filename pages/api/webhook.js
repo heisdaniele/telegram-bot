@@ -1,49 +1,10 @@
 const TelegramBot = require('node-telegram-bot-api');
 require('dotenv').config();
-const defaultFeature = require('../features/default');
-const customFeature = require('../features/custom');
-const bulkFeature = require('../features/bulk');
-const trackFeature = require('../features/track');
+const defaultFeature = require('../../features/default');
+const customFeature = require('../../features/custom');
+const bulkFeature = require('../../features/bulk');
+const trackFeature = require('../../features/track');
 const { formatTimeAgo } = require('../features/track');
-
-// Add this after your imports
-const handleUpdate = async (update) => {
-    try {
-        const msg = update.message || update.callback_query?.message;
-        const chatId = msg.chat.id;
-        
-        if (update.callback_query) {
-            await bot.answerCallbackQuery(update.callback_query.id);
-            // Handle callback query
-            // ...existing callback handling code...
-        } else if (msg.text) {
-            // Handle text messages
-            switch(msg.text) {
-                case '/start':
-                    await bot.sendMessage(chatId,
-                        '👋 *Welcome to URL Shortener Bot!*\n\n' +
-                        'Choose an option:',
-                        {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                keyboard: [
-                                    ['🔗 Quick Shorten', '📚 Bulk Shorten'],
-                                    ['🎯 Custom Alias', '📊 Track URL'],
-                                    ['📋 My URLs', 'ℹ️ Help']
-                                ],
-                                resize_keyboard: true
-                            }
-                        }
-                    );
-                    break;
-                // ... other message handling ...
-            }
-        }
-    } catch (error) {
-        console.error('Error handling update:', error);
-        throw error;
-    }
-};
 
 // Initialize bot without polling since we're using webhooks
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: false });
@@ -86,16 +47,70 @@ function isValidUrl(string) {
     }
 }
 
-module.exports = async (req, res) => {
+const handleUpdate = async (update) => {
+    try {
+        const msg = update.message || update.callback_query?.message;
+        const chatId = msg.chat.id;
+        
+        if (update.callback_query) {
+            const data = update.callback_query.data;
+            if (data.startsWith('track_')) {
+                await trackFeature.handleTrackCommand(bot, msg, data.split('_')[1]);
+            } else if (data === 'refresh_urls') {
+                await defaultFeature.handleListUrls(bot, msg);
+            }
+            await bot.answerCallbackQuery(update.callback_query.id);
+        } else if (msg.text) {
+            switch(msg.text) {
+                case '/start':
+                    await bot.sendMessage(chatId,
+                        '👋 *Welcome to URL Shortener Bot!*\n\n' +
+                        'Choose an option:',
+                        {
+                            parse_mode: 'Markdown',
+                            reply_markup: {
+                                keyboard: [
+                                    ['🔗 Quick Shorten', '📚 Bulk Shorten'],
+                                    ['🎯 Custom Alias', '📊 Track URL'],
+                                    ['📋 My URLs', 'ℹ️ Help']
+                                ],
+                                resize_keyboard: true
+                            }
+                        }
+                    );
+                    break;
+                case '📋 My URLs':
+                    await defaultFeature.handleListUrls(bot, msg);
+                    break;
+                case '🔗 Quick Shorten':
+                    await bot.sendMessage(msg.chat.id,
+                        'Send me any URL to shorten it!',
+                        { parse_mode: 'Markdown' }
+                    );
+                    defaultFeature.setUserState(msg.chat.id, 'WAITING_FOR_URL');
+                    break;
+                default:
+                    if (defaultFeature.getUserState(msg.chat.id) === 'WAITING_FOR_URL') {
+                        await defaultFeature.handleDefaultShorten(bot, msg);
+                        defaultFeature.setUserState(msg.chat.id, null);
+                    }
+                    break;
+            }
+        }
+    } catch (error) {
+        console.error('Error handling update:', error);
+        throw error;
+    }
+};
+
+export default async function handler(req, res) {
     console.log('Webhook request received:', {
         timestamp: new Date().toISOString(),
         method: req.method,
-        path: req.url,
-        secret: req.headers['x-telegram-bot-api-secret-token']?.substring(0, 8) + '...',
+        headers: req.headers,
     });
 
     if (req.method !== 'POST') {
-        console.log('Invalid method:', req.method);
         return res.status(405).json({ error: 'Method not allowed' });
     }
 
