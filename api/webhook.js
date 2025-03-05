@@ -6,41 +6,59 @@ const bulkFeature = require('../features/bulk');
 const trackFeature = require('../features/track');
 const { formatTimeAgo } = require('../features/track');
 
-// Add this after your imports
 const handleUpdate = async (update) => {
     try {
         const msg = update.message || update.callback_query?.message;
         const chatId = msg.chat.id;
         
+        // Add error handling for favicon.png and other common bot probes
+        if (msg.text && (
+            msg.text.includes('favicon.png') || 
+            msg.text.includes('robots.txt') ||
+            msg.text.includes('.well-known')
+        )) {
+            await bot.sendMessage(chatId, '⚠️ Invalid URL format. Please send a valid URL to shorten.');
+            return;
+        }
+
         if (update.callback_query) {
             await bot.answerCallbackQuery(update.callback_query.id);
             // Handle callback query
             // ...existing callback handling code...
         } else if (msg.text) {
             // Handle text messages
-            switch(msg.text) {
-                case '/start':
-                    await bot.sendMessage(chatId,
-                        '👋 *Welcome to URL Shortener Bot!*\n\n' +
-                        'Choose an option:',
-                        {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                keyboard: [
-                                    ['🔗 Quick Shorten', '📚 Bulk Shorten'],
-                                    ['🎯 Custom Alias', '📊 Track URL'],
-                                    ['📋 My URLs', 'ℹ️ Help']
-                                ],
-                                resize_keyboard: true
+            try {
+                switch(msg.text) {
+                    case '/start':
+                        await bot.sendMessage(chatId,
+                            '👋 *Welcome to URL Shortener Bot!*\n\n' +
+                            'Choose an option:',
+                            {
+                                parse_mode: 'Markdown',
+                                reply_markup: {
+                                    keyboard: [
+                                        ['🔗 Quick Shorten', '📚 Bulk Shorten'],
+                                        ['🎯 Custom Alias', '📊 Track URL'],
+                                        ['📋 My URLs', 'ℹ️ Help']
+                                    ],
+                                    resize_keyboard: true
+                                }
                             }
-                        }
-                    );
-                    break;
-                // ... other message handling ...
+                        );
+                        break;
+                    // ... other message handling ...
+                }
+            } catch (error) {
+                console.error('Error in message handling:', error);
+                await bot.sendMessage(chatId, '⚠️ An error occurred while processing your request. Please try again.');
             }
         }
     } catch (error) {
         console.error('Error handling update:', error);
+        // Send a generic error message to user
+        if (msg?.chat?.id) {
+            await bot.sendMessage(msg.chat.id, '⚠️ Sorry, something went wrong. Please try again later.');
+        }
         throw error;
     }
 };
@@ -107,6 +125,13 @@ export default async function handler(req, res) {
 
     try {
         const update = req.body;
+        
+        // Add validation for update object
+        if (!update || typeof update !== 'object') {
+            console.error('Invalid update format:', update);
+            return res.status(400).json({ error: 'Invalid update format' });
+        }
+
         console.log('Update received:', {
             updateId: update.update_id,
             messageId: update.message?.message_id,
@@ -127,6 +152,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true });
     } catch (error) {
         console.error('Webhook error:', error);
+        // Don't expose error details in production
         return res.status(500).json({ error: 'Internal server error' });
     }
 }
