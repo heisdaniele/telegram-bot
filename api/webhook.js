@@ -32,58 +32,155 @@ const handleUpdate = async (update) => {
     try {
         const msg = update.message || update.callback_query?.message;
         const chatId = msg.chat.id;
-        
-        // Add error handling for favicon.png and other common bot probes
-        if (msg.text && (
-            msg.text.includes('favicon.png') || 
-            msg.text.includes('robots.txt') ||
-            msg.text.includes('.well-known')
-        )) {
-            await bot.sendMessage(chatId, '⚠️ Invalid URL format. Please send a valid URL to shorten.');
+        const text = msg.text || '';  // Ensure text is not undefined
+
+        // Log incoming message for debugging
+        console.log('Received message:', {
+            chatId,
+            text,
+            type: msg?.entities?.[0]?.type
+        });
+
+        // Handle states
+        const userState = defaultFeature.getUserState(chatId);
+        if (userState === 'WAITING_FOR_URL') {
+            await handleUrlShortening(msg);
             return;
         }
 
-        if (update.callback_query) {
-            await bot.answerCallbackQuery(update.callback_query.id);
-            // Handle callback query
-            // ...existing callback handling code...
-        } else if (msg.text) {
-            // Handle text messages
-            try {
-                switch(msg.text) {
-                    case '/start':
-                        await bot.sendMessage(chatId,
-                            '👋 *Welcome to URL Shortener Bot!*\n\n' +
-                            'Choose an option:',
-                            {
-                                parse_mode: 'Markdown',
-                                reply_markup: {
-                                    keyboard: [
-                                        ['🔗 Quick Shorten', '📚 Bulk Shorten'],
-                                        ['🎯 Custom Alias', '📊 Track URL'],
-                                        ['📋 My URLs', 'ℹ️ Help']
-                                    ],
-                                    resize_keyboard: true
-                                }
-                            }
-                        );
-                        break;
-                    // ... other message handling ...
+        // Handle /track and /urls commands
+        if (text.startsWith('/track')) {
+            await trackFeature.handleTrackCommand(bot, msg);
+            return;
+        }
+
+        // Make command matching more robust
+        switch(text.toLowerCase()) {
+            case '/start':
+                await bot.sendMessage(chatId,
+                    '👋 *Welcome to URL Shortener Bot!*\n\n' +
+                    'Choose an option:',
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            keyboard: [
+                                ['🔗 Quick Shorten', '📚 Bulk Shorten'],
+                                ['🎯 Custom Alias', '📊 Track URL'],
+                                ['📋 My URLs', 'ℹ️ Help']
+                            ],
+                            resize_keyboard: true
+                        }
+                    }
+                );
+                break;
+
+            case '📊 track url':
+                await bot.sendMessage(chatId,
+                    '*URL Tracking*\n\n' +
+                    'Send the alias of the URL you want to track:\n' +
+                    'Example: `/track your-alias`',
+                    { parse_mode: 'Markdown' }
+                );
+                break;
+
+            case '📋 my urls':
+                try {
+                    await defaultFeature.handleListUrls(bot, msg);
+                } catch (error) {
+                    console.error('List URLs error:', error);
+                    await bot.sendMessage(chatId,
+                        '❌ Failed to fetch your URLs.\n' +
+                        'Please try again later.',
+                        { parse_mode: 'Markdown' }
+                    );
                 }
-            } catch (error) {
-                console.error('Error in message handling:', error);
-                await bot.sendMessage(chatId, '⚠️ An error occurred while processing your request. Please try again.');
-            }
+                break;
+
+            case '🔗 quick shorten':
+                defaultFeature.setUserState(chatId, 'WAITING_FOR_URL');
+                await bot.sendMessage(chatId, 
+                    '📝 *Send me the URL to shorten:*',
+                    { parse_mode: 'Markdown' }
+                );
+                break;
+
+            case '📚 bulk shorten':
+                bulkFeature.setUserState(chatId, 'WAITING_FOR_URLS');
+                await bot.sendMessage(chatId,
+                    '*Bulk URL Shortener*\n\n' +
+                    'Send multiple URLs separated by spaces:',
+                    { parse_mode: 'Markdown' }
+                );
+                break;
+
+            case '🎯 custom alias':
+                await customFeature.handleCustomStart(bot, chatId);
+                break;
+
+            case 'ℹ️ help':
+                await bot.sendMessage(chatId, 
+                    '*Available Commands:*\n\n' +
+                    '🔗 Quick Shorten - Simple URL shortening\n' +
+                    '📚 Bulk Shorten - Multiple URLs at once\n' +
+                    '🎯 Custom Alias - Choose your own alias\n' +
+                    '📊 /track - View URL statistics\n' +
+                    '📋 /urls - List your shortened URLs',
+                    { parse_mode: 'Markdown' }
+                );
+                break;
+
+            default:
+                // Handle URL shortening states
+                if (userState === 'WAITING_FOR_URL') {
+                    defaultFeature.setUserState(chatId, null);
+                    await defaultFeature.handleDefaultShorten(bot, msg);
+                }
+                // Handle bulk URL states
+                else if (bulkFeature.getUserState(chatId) === 'WAITING_FOR_URLS') {
+                    bulkFeature.setUserState(chatId, null);
+                    await bulkFeature.handleBulkShorten(bot, msg);
+                }
+                // Handle custom URL states
+                else if (customFeature.getUserState(chatId)) {
+                    await customFeature.handleCustomInput(bot, msg);
+                }
         }
+
     } catch (error) {
-        console.error('Error handling update:', error);
-        // Send a generic error message to user
+        console.error('Error in handleUpdate:', error);
         if (msg?.chat?.id) {
-            await bot.sendMessage(msg.chat.id, '⚠️ Sorry, something went wrong. Please try again later.');
+            await bot.sendMessage(msg.chat.id, 
+                '❌ An error occurred. Please try again.',
+                { parse_mode: 'Markdown' }
+            );
         }
-        throw error;
     }
 };
+
+// Add this helper function for URL shortening
+async function handleUrlShortening(msg) {
+    const chatId = msg.chat.id;
+    const url = msg.text;
+
+    if (!isValidUrl(url)) {
+        await bot.sendMessage(chatId,
+            '❌ Please send a valid URL.',
+            { parse_mode: 'Markdown' }
+        );
+        return;
+    }
+
+    try {
+        const shortUrl = await defaultFeature.handleDefaultShorten(bot, msg);
+        defaultFeature.setUserState(chatId, null);
+    } catch (error) {
+        console.error('URL shortening error:', error);
+        await bot.sendMessage(chatId,
+            '❌ Failed to shorten URL. Please try again.',
+            { parse_mode: 'Markdown' }
+        );
+    }
+}
 
 // Initialize bot without polling since we're using webhooks
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: false });
