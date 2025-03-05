@@ -1,5 +1,10 @@
 const TelegramBot = require('node-telegram-bot-api');
 require('dotenv').config();
+const { createClient } = require('@supabase/supabase-js');
+const supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_ANON_KEY
+);
 const defaultFeature = require('../features/default');
 const customFeature = require('../features/custom');
 const bulkFeature = require('../features/bulk');
@@ -192,4 +197,31 @@ async function formatStatsMessage(stats) {
         '🗓 *Created:*',
         `   ${formatTimeAgo(stats.created)}`
     ].join('\n');
+}
+
+async function performUrlLookup(alias) {
+    try {
+        const { data, error } = await supabase
+            .from('urls')
+            .select('*')
+            .eq('alias', alias)
+            .single();
+
+        if (error) {
+            if (error.code === 'PGRST116') {
+                // No results found
+                return null;
+            }
+            throw error;
+        }
+
+        return data;
+    } catch (error) {
+        console.error('Supabase lookup error:', {
+            error,
+            alias,
+            timestamp: new Date().toISOString()
+        });
+        return null;
+    }
 }
