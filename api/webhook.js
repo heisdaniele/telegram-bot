@@ -6,7 +6,36 @@ const bulkFeature = require('../features/bulk');
 const trackFeature = require('../features/track');
 const { formatTimeAgo } = require('../features/track');
 
+// Initialize bot without polling since we're using webhooks
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: false });
+
+// Add security middleware
+const validateWebhook = (req) => {
+  const token = req.headers['x-telegram-bot-api-secret-token'];
+  return token === process.env.WEBHOOK_SECRET;
+};
+
+// Rate limiting setup (in-memory for demo, use Redis in production)
+const rateLimit = new Map();
+const RATE_LIMIT = 30; // requests per minute
+const RATE_WINDOW = 60 * 1000; // 1 minute
+
+const checkRateLimit = (userId) => {
+  const now = Date.now();
+  const userRate = rateLimit.get(userId) || { count: 0, timestamp: now };
+  
+  if (now - userRate.timestamp > RATE_WINDOW) {
+    userRate.count = 1;
+    userRate.timestamp = now;
+  } else if (userRate.count >= RATE_LIMIT) {
+    return false;
+  } else {
+    userRate.count++;
+  }
+  
+  rateLimit.set(userId, userRate);
+  return true;
+};
 
 // URL validation helper
 function isValidUrl(string) {
@@ -19,260 +48,61 @@ function isValidUrl(string) {
 }
 
 module.exports = async (req, res) => {
+    // Basic request validation
+    if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' });
+    }
+
+    // Security check
+    if (!validateWebhook(req)) {
+        console.error('Invalid webhook secret token');
+        return res.status(403).json({ error: 'Unauthorized' });
+    }
+
     // Declare msg at the top level of the function
     let msg;
     try {
-        if (req.method !== 'POST') {
-            return res.status(405).json({ error: 'Method not allowed' });
-        }
-
         const update = req.body;
-        console.log('Received update:', JSON.stringify(update, null, 2));
-
-        if (!update || !update.message || !update.message.chat) {
+        
+        // Validate update format
+        if (!update || (!update.message && !update.callback_query)) {
             return res.status(400).json({ error: 'Invalid update format' });
         }
 
-        msg = update.message;  // Assign to the outer msg variable
-        const chatId = msg.chat.id;
-        const text = msg.text;
-
-        console.log(`Processing message: ${text} from chat ${chatId}`);
-        console.log(`Current state: ${defaultFeature.getUserState(chatId)}`);
-
-        // First, handle custom alias states
-        if (customFeature.getUserState(chatId)) {
-            await customFeature.handleCustomInput(bot, msg);
-            return res.status(200).json({ ok: true });
+        // Get message from update
+        msg = update.message || update.callback_query?.message;
+        if (!msg?.chat?.id) {
+            return res.status(400).json({ error: 'Invalid message format' });
         }
 
-        // Then handle other URL states and URL detection
-        const userState = defaultFeature.getUserState(chatId);
-        const isUrl = text && text.match(/^https?:\/\//i);
-        
-        if (userState === 'WAITING_FOR_URL' || isUrl) {
-            let formattedUrl = text;
-
-            // Validate URL
-// Place this check before the URL validation
-if (customFeature.getUserState(chatId)) {
-    await customFeature.handleCustomInput(bot, msg);
-    return res.status(200).json({ ok: true });
-}
-
-// Then handle other URL states and URL detection
-const userState = defaultFeature.getUserState(chatId);
-const isUrl = text && text.match(/^https?:\/\//i);
-
-            if (!isValidUrl(formattedUrl)) {
-                await bot.sendMessage(chatId, 
-                    '❌ Please send a valid URL.\nExample: `https://example.com`',
-                    { parse_mode: 'Markdown' }
-                );
-                return res.status(200).json({ ok: true });
-            }
-
-            try {
-                // Update msg.text with formatted URL
-                msg.text = formattedUrl;
-                await defaultFeature.handleDefaultShorten(bot, msg);
-                defaultFeature.setUserState(chatId, null); // Reset state
-                return res.status(200).json({ ok: true });
-            } catch (error) {
-                console.error('URL shortening error:', error);
-                await bot.sendMessage(chatId, 
-                    '❌ Failed to shorten URL. Please try again.',
-                    { parse_mode: 'Markdown' }
-                );
-                defaultFeature.setUserState(chatId, null);
-                return res.status(200).json({ ok: true });
-            }
+        // Rate limiting
+        const userId = msg.from?.id;
+        if (userId && !checkRateLimit(userId)) {
+            await bot.sendMessage(msg.chat.id, 
+                '⚠️ Rate limit exceeded. Please try again later.',
+                { parse_mode: 'Markdown' }
+            );
+            return res.status(429).json({ error: 'Rate limit exceeded' });
         }
 
-        // Handle commands and keyboard buttons
-        switch(text) {
-            case '/start':
-                await bot.sendMessage(chatId,
-                    '👋 *Welcome to URL Shortener Bot!*\n\n' +
-                    'Choose an option:',
-                    {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            keyboard: [
-                                ['🔗 Quick Shorten', '📚 Bulk Shorten'],
-                                ['🎯 Custom Alias', '📊 Track URL'],
-                                ['📋 My URLs', 'ℹ️ Help']
-                            ],
-                            resize_keyboard: true
-                        }
-                    }
-                );
-                break;
+        // Log incoming update
+        console.log('Received update:', {
+            updateId: update.update_id,
+            userId: msg.from?.id,
+            chatId: msg.chat.id,
+            messageType: update.message ? 'message' : 'callback_query'
+        });
 
-            case '🔗 Quick Shorten':
-                defaultFeature.setUserState(chatId, 'WAITING_FOR_URL');
-                await bot.sendMessage(chatId,
-                    '📝 *Send me the URL to shorten:*\nExample: `https://example.com`',
-                    { parse_mode: 'Markdown' }
-                );
-                break;
-
-            case '📚 Bulk Shorten':
-                defaultFeature.setUserState(chatId, 'WAITING_FOR_BULK');
-                await bot.sendMessage(chatId,
-                    '*Send me multiple URLs* (one per line)\n\n' +
-                    'Example:\n' +
-                    '`https://example1.com`\n' +
-                    '`https://example2.com`',
-                    { parse_mode: 'Markdown' }
-                );
-                break;
-
-            case '🎯 Custom Alias':
-                customFeature.setUserState(chatId, 'WAITING_FOR_CUSTOM_URL');
-                await bot.sendMessage(chatId,
-                    '🎯 *Custom URL Shortening*\n\n' +
-                    'First, send me the URL you want to shorten:\n' +
-                    'Example: `https://example.com`',
-                    { parse_mode: 'Markdown' }
-                );
-                break;
-
-            case '📊 Track URL':
-                await bot.sendMessage(chatId,
-                    '*URL Tracking*\n\n' +
-                    'Send `/track` followed by the alias to see stats\n' +
-                    'Example: `/track mylink`\n\n' +
-                    'Stats include:\n' +
-                    '• Total clicks\n' +
-                    '• Unique visitors\n' +
-                    '• Device types\n' +
-                    '• Locations\n' +
-                    '• Recent activity',
-                    { parse_mode: 'Markdown' }
-                );
-                break;
-
-            case '📋 My URLs':
-                try {
-                    await defaultFeature.handleListUrls(bot, msg);
-                } catch (error) {
-                    console.error('My URLs error:', {
-                        error: error.message,
-                        userId: msg?.from?.id,
-                        chatId: msg?.chat?.id
-                    });
-                    await bot.sendMessage(msg.chat.id,
-                        '❌ Failed to fetch your URLs. Please try again later.',
-                        { parse_mode: 'Markdown' }
-                    );
-                }
-                break;
-
-            case 'ℹ️ Help':
-                await bot.sendMessage(chatId,
-                    '*Available Commands*\n\n' +
-                    '🔗 `Quick Shorten` - Simple URL shortening\n' +
-                    '📚 `Bulk Shorten` - Multiple URLs at once\n' +
-                    '🎯 `Custom Alias` - Choose your own alias\n' +
-                    '📊 `/track` - View URL statistics\n' +
-                    '📋 `/urls` - List your shortened URLs',
-                    { parse_mode: 'Markdown' }
-                );
-                break;
-
-            default:
-                if (text.startsWith('/track ')) {
-                    try {
-                        const alias = text.split(' ')[1];
-                        if (!alias) {
-                            await bot.sendMessage(chatId,
-                                '❌ Please provide an alias.\nExample: `/track mylink`',
-                                { parse_mode: 'Markdown' }
-                            );
-                            return res.status(200).json({ ok: true });
-                        }
-
-                        // Get URL stats with error handling
-                        const stats = await trackFeature.getUrlStats(alias);
-                        if (!stats) {
-                            await bot.sendMessage(chatId,
-                                '❌ URL not found. Please check the alias and try again.',
-                                { parse_mode: 'Markdown' }
-                            );
-                            return res.status(200).json({ ok: true });
-                        }
-
-                        // Format statistics safely
-                        const statsMessage = await formatStatsMessage(stats);
-                        
-                        await bot.sendMessage(chatId, statsMessage, {
-                            parse_mode: 'Markdown',
-                            reply_markup: {
-                                inline_keyboard: [[
-                                    {
-                                        text: '🔄 Refresh Stats',
-                                        callback_data: `track_${alias}`
-                                    }
-                                ]]
-                            }
-                        });
-                    } catch (error) {
-                        console.error('Track command error:', error);
-                        await bot.sendMessage(chatId,
-                            '❌ Failed to fetch statistics. Please try again later.',
-                            { parse_mode: 'Markdown' }
-                        );
-                    }
-                } else if (text.startsWith('/urls')) {
-                    try {
-                        await defaultFeature.handleListUrls(bot, msg);
-                    } catch (error) {
-                        console.error('URLs command error:', {
-                            error: error.message,
-                            userId: msg?.from?.id,
-                            chatId: msg?.chat?.id
-                        });
-                        await bot.sendMessage(msg.chat.id,
-                            '❌ Failed to fetch your URLs. Please try again later.',
-                            { parse_mode: 'Markdown' }
-                        );
-                    }
-                } else if (customFeature.getUserState(chatId) === 'WAITING_FOR_CUSTOM_URL') {
-                    const url = text;
-                    if (!isValidUrl(url)) {
-                        await bot.sendMessage(chatId,
-                            '❌ Please send a valid URL.\nExample: `https://example.com`',
-                            { parse_mode: 'Markdown' }
-                        );
-                        return res.status(200).json({ ok: true });
-                    }
-                    
-                    customFeature.setUserState(chatId, 'WAITING_FOR_ALIAS');
-                    customFeature.setTempUrl(chatId, url); // Add this function to custom feature
-                    
-                    await bot.sendMessage(chatId,
-                        '✨ Great! Now send me your desired custom alias:\n' +
-                        'Example: `mylink`\n\n' +
-                        '• 3-20 characters\n' +
-                        '• Letters, numbers, and hyphens only\n' +
-                        '• No spaces allowed',
-                        { parse_mode: 'Markdown' }
-                    );
-                    return res.status(200).json({ ok: true });
-                } else if (customFeature.getUserState(chatId) === 'WAITING_FOR_ALIAS') {
-                    await customFeature.handleCustomInput(bot, msg);
-                    return res.status(200).json({ ok: true });
-                } else if (customFeature.getUserState(chatId)) {
-                    await customFeature.handleCustomInput(bot, msg);
-                } else if (text.startsWith('/custom')) {
-                    await customFeature.handleCustomAlias(bot, msg);
-                } else {
-                    await bot.sendMessage(chatId,
-                        '❓ Please use the keyboard buttons or commands.\nType /start to see available options.',
-                        { parse_mode: 'Markdown' }
-                    );
-                }
+        // Handle different types of updates
+        if (update.callback_query) {
+            await handleCallbackQuery(update.callback_query, bot);
+        } else if (msg.photo) {
+            await handlePhoto(msg, bot);
+        } else if (msg.document) {
+            await handleDocument(msg, bot);
+        } else {
+            // Handle text messages and commands
+            await handleMessage(msg, bot);
         }
 
         return res.status(200).json({ ok: true });
@@ -284,9 +114,12 @@ const isUrl = text && text.match(/^https?:\/\//i);
             userId: msg?.from?.id,  // Now msg will be safely accessible here
             chatId: msg?.chat?.id
         });
+
+        // Don't expose error details in production
         return res.status(500).json({ 
-            error: 'Internal server error',
-            details: error.message 
+            error: process.env.NODE_ENV === 'production' 
+                ? 'Internal server error' 
+                : error.message 
         });
     }
 };
