@@ -80,7 +80,14 @@ async function startBot() {
         bot.on('message', async (msg) => {
             try {
                 const chatId = msg.chat.id;
-                const text = msg.text;
+                const text = msg.text || '';  // Ensure text is not undefined
+
+                // Log incoming message for debugging
+                console.log('Received message:', {
+                    chatId,
+                    text,
+                    type: msg.entities?.[0]?.type
+                });
 
                 // Handle states
                 const userState = defaultFeature.getUserState(chatId);
@@ -90,13 +97,15 @@ async function startBot() {
                 }
 
                 // Handle /track and /urls commands
-                if (msg.text?.startsWith('/track')) {
+                if (text.startsWith('/track')) {
                     await trackFeature.handleTrackCommand(bot, msg);
                     return;
                 }
 
-                switch(msg.text) {
+                // Make command matching more robust
+                switch(text.toLowerCase()) {
                     case '/start':
+                        console.log('Handling /start command');
                         await bot.sendMessage(chatId,
                             '👋 *Welcome to URL Shortener Bot!*\n\n' +
                             'Choose an option:',
@@ -111,7 +120,10 @@ async function startBot() {
                                     resize_keyboard: true
                                 }
                             }
-                        );
+                        ).catch(error => {
+                            console.error('Error sending start message:', error);
+                            throw error;
+                        });
                         break;
 
                     case '📊 Track URL':
