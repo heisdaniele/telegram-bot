@@ -8,20 +8,20 @@
   ],
   "routes": [
     {
-      "src": "/webhook",
-      "dest": "/api/webhook",
+      "src": "/api/webhook",
+      "dest": "/api/webhook.js",
       "methods": ["POST"],
       "headers": {
         "Access-Control-Allow-Origin": "*"
       }
     },
     {
-      "src": "/health",
+      "src": "/api/health",
       "dest": "/api/health.js",
       "methods": ["GET"]
     },
     {
-      "src": "/(.*)",
+      "src": "/((?!api/).*)",
       "dest": "/api/redirect.js"
     }
   ],

@@ -22,9 +22,15 @@ app.get('/health', (_, res) => {
 });
 
 // URL redirection endpoint with enhanced tracking
-app.get('/:shortAlias', async (req, res) => {
+app.get('/:shortAlias', async (req, res, next) => {
     try {
         const { shortAlias } = req.params;
+        
+        // Ignore API routes
+        if (shortAlias.startsWith('api/')) {
+            return next();
+        }
+
         console.log('Looking up shortAlias:', shortAlias);
         
         // Query updated to match new schema
