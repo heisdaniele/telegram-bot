@@ -19,19 +19,29 @@ const DOMAIN = process.env.NODE_ENV === 'production'
     : 'localhost:3000';
 const PROTOCOL = 'https';  // Required for Telegram inline buttons
 
-// Enhance state management
+// Add proper error handling and state persistence
 const userStates = new Map();
 
 function setUserState(chatId, state) {
-    userStates.set(chatId.toString(), state);
-    console.log(`State set for ${chatId}: ${state}`); // Debug log
-    return state;
+    try {
+        userStates.set(chatId.toString(), state);
+        debugLog(`State set for ${chatId}:`, state);
+        return state;
+    } catch (error) {
+        console.error('Error setting user state:', error);
+        return null;
+    }
 }
 
 function getUserState(chatId) {
-    const state = userStates.get(chatId.toString());
-    console.log(`Getting state for ${chatId}: ${state}`); // Debug log
-    return state;
+    try {
+        const state = userStates.get(chatId.toString());
+        debugLog(`State get for ${chatId}:`, state);
+        return state;
+    } catch (error) {
+        console.error('Error getting user state:', error);
+        return null;
+    }
 }
 
 // Update validateAndFormatUrl with logging
@@ -90,13 +100,17 @@ async function ensureUserExists(user) {
   }
 }
 
-// Update handleDefaultShorten to handle both direct URLs and keyboard button input
+// Update handleDefaultShorten with better error handling
 async function handleDefaultShorten(bot, msg) {
     const chatId = msg.chat.id;
+    debugLog('Starting handleDefaultShorten for chatId:', chatId);
     
     try {
-        // Check if we're in URL waiting state
-        if (getUserState(chatId) !== 'WAITING_FOR_URL') {
+        const currentState = getUserState(chatId);
+        debugLog('Current state:', currentState);
+
+        // If this is the initial Quick Shorten button press
+        if (!currentState) {
             setUserState(chatId, 'WAITING_FOR_URL');
             await bot.sendMessage(chatId,
                 '📝 *Send me the URL to shorten:*',
@@ -105,57 +119,62 @@ async function handleDefaultShorten(bot, msg) {
             return;
         }
 
-        // Reset state immediately
-        setUserState(chatId, null);
+        // If we're waiting for the URL and received it
+        if (currentState === 'WAITING_FOR_URL') {
+            // Reset state first
+            setUserState(chatId, null);
 
-        // Extract and validate URL
-        const url = msg.text.trim();
-        const formattedUrl = validateAndFormatUrl(url);
-        
-        if (!formattedUrl) {
-            await bot.sendMessage(chatId,
-                '❌ Invalid URL. Please send a valid URL (e.g. `example.com`).',
-                { parse_mode: 'Markdown' }
-            );
-            return;
-        }
+            if (!msg.text) {
+                throw new Error('No URL provided');
+            }
 
-        // 3. Ensure user exists in tg_users
-        const userExists = await ensureUserExists(msg.from);
-        if (!userExists) {
-            console.error('Failed to ensure user exists for Telegram ID:', msg.from.id);
-            return bot.sendMessage(chatId,
-                '❌ Unable to verify your user account. Please try again.',
-                { parse_mode: 'Markdown' }
-            );
-        }
+            const url = msg.text.trim();
+            const formattedUrl = validateAndFormatUrl(url);
+            
+            if (!formattedUrl) {
+                await bot.sendMessage(chatId,
+                    '❌ Invalid URL. Please send a valid URL (e.g. `example.com`).',
+                    { parse_mode: 'Markdown' }
+                );
+                return;
+            }
 
-        // 4. Generate short alias with proper URL formatting
-        const shortAlias = nanoid(6).toLowerCase();
-        const shortUrl = `${PROTOCOL}://${DOMAIN}/${shortAlias}`;
-        const displayUrl = `${DOMAIN}/${shortAlias}`;  // For display purposes
+            // 3. Ensure user exists in tg_users
+            const userExists = await ensureUserExists(msg.from);
+            if (!userExists) {
+                console.error('Failed to ensure user exists for Telegram ID:', msg.from.id);
+                return bot.sendMessage(chatId,
+                    '❌ Unable to verify your user account. Please try again.',
+                    { parse_mode: 'Markdown' }
+                );
+            }
 
-        // 5. Insert into database with new schema
-        const { data, error: insertError } = await supabase
-          .from('tg_shortened_urls')
-          .insert({
-            user_id: msg.from.id,
-            original_url: formattedUrl,
-            short_alias: shortAlias,
-            created_at: new Date().toISOString(),
-            clicks: 0, // Initialize clicks counter
-            last_clicked: null // Initialize last_clicked timestamp
-          })
-          .select()
-          .single();
+            // 4. Generate short alias with proper URL formatting
+            const shortAlias = nanoid(6).toLowerCase();
+            const shortUrl = `${PROTOCOL}://${DOMAIN}/${shortAlias}`;
+            const displayUrl = `${DOMAIN}/${shortAlias}`;  // For display purposes
 
-        if (insertError) {
-          console.error('Database insertion error:', insertError);
-          throw new Error('Failed to save URL');
-        }
+            // 5. Insert into database with new schema
+            const { data, error: insertError } = await supabase
+              .from('tg_shortened_urls')
+              .insert({
+                user_id: msg.from.id,
+                original_url: formattedUrl,
+                short_alias: shortAlias,
+                created_at: new Date().toISOString(),
+                clicks: 0, // Initialize clicks counter
+                last_clicked: null // Initialize last_clicked timestamp
+              })
+              .select()
+              .single();
 
-        // 6. Construct success message
-        const response = `
+            if (insertError) {
+              console.error('Database insertion error:', insertError);
+              throw new Error('Failed to save URL');
+            }
+
+            // 6. Construct success message
+            const response = `
 ✅ *URL Shortened Successfully!*
 
 🔗 *Original URL:*
@@ -166,34 +185,40 @@ async function handleDefaultShorten(bot, msg) {
 
 📊 Use \`/track ${shortAlias}\` to view statistics`;
 
-        // 7. Send message with working inline buttons
-        await bot.sendMessage(chatId, response, {
-          parse_mode: 'Markdown',
-          disable_web_page_preview: true,
-          reply_markup: {
-            inline_keyboard: [[
-              {
-                text: '🔗 Copy URL',
-                callback_data: `copy_${shortAlias}`
-              },
-              {
-                text: '📊 Track',
-                callback_data: `track_${shortAlias}`
+            // 7. Send message with working inline buttons
+            await bot.sendMessage(chatId, response, {
+              parse_mode: 'Markdown',
+              disable_web_page_preview: true,
+              reply_markup: {
+                inline_keyboard: [[
+                  {
+                    text: '🔗 Copy URL',
+                    callback_data: `copy_${shortAlias}`
+                  },
+                  {
+                    text: '📊 Track',
+                    callback_data: `track_${shortAlias}`
+                  }
+                ]]
               }
-            ]]
-          }
-        });
+            });
 
-        console.log(`URL shortened: ${displayUrl} (user: ${msg.from.id})`);
+            console.log(`URL shortened: ${displayUrl} (user: ${msg.from.id})`);
+        }
 
     } catch (error) {
         console.error('Error in handleDefaultShorten:', error);
         setUserState(chatId, null); // Reset state on error
         await bot.sendMessage(chatId,
-            '❌ Failed to shorten URL. Please try again.',
+            '❌ An error occurred. Please try again.',
             { parse_mode: 'Markdown' }
-        );
+        ).catch(console.error);
     }
+}
+
+// Add validation helper
+function isValidState(state) {
+    return ['WAITING_FOR_URL', null].includes(state);
 }
 
 /**
@@ -270,5 +295,6 @@ module.exports = {
     validateAndFormatUrl,
     ensureUserExists,
     handleDefaultShorten,
-    handleListUrls  // Add this to exports
+    handleListUrls,
+    isValidState // Add this new helper
 };

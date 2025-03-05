@@ -31,31 +31,44 @@ const { formatTimeAgo } = require('../features/track');
 const handleUpdate = async (update) => {
     try {
         const msg = update.message || update.callback_query?.message;
+        if (!msg || !msg.chat) {
+            console.error('Invalid message format:', update);
+            return;
+        }
+
         const chatId = msg.chat.id;
         const text = msg.text || '';
 
         // Debug logging
-        console.log('Handling update:', {
+        console.log('Received message:', {
             chatId,
             text,
-            state: defaultFeature.getUserState(chatId)
+            type: msg.entities?.[0]?.type
         });
 
-        // Handle URL shortening state
-        if (defaultFeature.getUserState(chatId) === 'WAITING_FOR_URL') {
-            await defaultFeature.handleDefaultShorten(bot, msg);
-            return;
-        }
-
-        // Handle keyboard commands with exact matching
+        // Handle keyboard commands
         switch(text) {
             case '🔗 Quick Shorten':
                 await defaultFeature.handleDefaultShorten(bot, msg);
                 break;
-            // ...other cases...
+            case '📋 My URLs':
+                await defaultFeature.handleListUrls(bot, msg);
+                break;
+            default:
+                // Handle URL input if we're waiting for it
+                if (defaultFeature.getUserState(chatId) === 'WAITING_FOR_URL') {
+                    await defaultFeature.handleDefaultShorten(bot, msg);
+                }
         }
+
     } catch (error) {
-        console.error('Update handler error:', error);
+        console.error('Error in handleUpdate:', error);
+        if (msg?.chat?.id) {
+            await bot.sendMessage(msg.chat.id,
+                '❌ An error occurred. Please try again.',
+                { parse_mode: 'Markdown' }
+            ).catch(console.error);
+        }
     }
 };
 
