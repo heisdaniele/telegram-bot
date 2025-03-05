@@ -46,19 +46,78 @@ const handleUpdate = async (update) => {
             type: msg.entities?.[0]?.type
         });
 
-        // Handle keyboard commands
+        // Handle /start command first
+        if (text === '/start') {
+            await bot.sendMessage(chatId,
+                '👋 *Welcome to URL Shortener Bot!*\n\n' +
+                'Choose an option:',
+                {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        keyboard: [
+                            ['🔗 Quick Shorten', '📚 Bulk Shorten'],
+                            ['🎯 Custom Alias', '📊 Track URL'],
+                            ['📋 My URLs', 'ℹ️ Help']
+                        ],
+                        resize_keyboard: true
+                    }
+                }
+            );
+            return;
+        }
+
+        // Handle keyboard commands and URL inputs
         switch(text) {
             case '🔗 Quick Shorten':
-                await defaultFeature.handleDefaultShorten(bot, msg);
+                defaultFeature.setUserState(chatId, 'WAITING_FOR_URL');
+                await bot.sendMessage(chatId,
+                    '📝 *Send me the URL to shorten:*',
+                    { parse_mode: 'Markdown' }
+                );
                 break;
+
             case '📋 My URLs':
                 await defaultFeature.handleListUrls(bot, msg);
                 break;
+
+            case '📚 Bulk Shorten':
+                await bulkFeature.handleBulkStart(bot, msg);
+                break;
+
+            case '🎯 Custom Alias':
+                await customFeature.handleCustomStart(bot, msg);
+                break;
+
+            case '📊 Track URL':
+                await bot.sendMessage(chatId,
+                    '*URL Tracking*\n\n' +
+                    'Send the alias of the URL you want to track:\n' +
+                    'Example: `/track your-alias`',
+                    { parse_mode: 'Markdown' }
+                );
+                break;
+
+            case 'ℹ️ Help':
+                await bot.sendMessage(chatId,
+                    '*Available Commands:*\n\n' +
+                    '🔗 Quick Shorten - Simple URL shortening\n' +
+                    '📚 Bulk Shorten - Multiple URLs at once\n' +
+                    '🎯 Custom Alias - Choose your own alias\n' +
+                    '📊 Track URL - View URL statistics\n' +
+                    '📋 My URLs - List your shortened URLs',
+                    { parse_mode: 'Markdown' }
+                );
+                break;
+
             default:
                 // Handle URL input if we're waiting for it
-                if (defaultFeature.getUserState(chatId) === 'WAITING_FOR_URL') {
+                const userState = defaultFeature.getUserState(chatId);
+                if (userState === 'WAITING_FOR_URL') {
                     await defaultFeature.handleDefaultShorten(bot, msg);
+                } else if (text.startsWith('/track ')) {
+                    await trackFeature.handleTrackCommand(bot, msg);
                 }
+                break;
         }
 
     } catch (error) {
@@ -170,23 +229,15 @@ export default async function handler(req, res) {
             return res.status(400).json({ error: 'Invalid update format' });
         }
 
-        // Validate required fields
-        const msg = update.message || update.callback_query?.message;
-        if (!msg?.chat?.id || !msg?.from?.id) {
-            console.error('Missing required fields:', {
-                chatId: msg?.chat?.id,
-                fromId: msg?.from?.id
-            });
-            return res.status(400).json({ error: 'Missing required fields' });
-        }
-
         // Process the update
         await handleUpdate(update);
         
+        // Always return 200 to Telegram
         return res.status(200).json({ ok: true });
     } catch (error) {
         console.error('Webhook error:', error);
-        return res.status(500).json({ error: 'Internal server error' });
+        // Still return 200 to Telegram but log the error
+        return res.status(200).json({ ok: true });
     }
 }
 
