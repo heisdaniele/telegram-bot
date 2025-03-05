@@ -86,18 +86,17 @@ function isValidUrl(string) {
     }
 }
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
+    if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' });
+    }
+
     console.log('Webhook request received:', {
         timestamp: new Date().toISOString(),
         method: req.method,
         path: req.url,
         secret: req.headers['x-telegram-bot-api-secret-token']?.substring(0, 8) + '...',
     });
-
-    if (req.method !== 'POST') {
-        console.log('Invalid method:', req.method);
-        return res.status(405).json({ error: 'Method not allowed' });
-    }
 
     // Validate webhook secret
     const token = req.headers['x-telegram-bot-api-secret-token'];
@@ -130,7 +129,7 @@ module.exports = async (req, res) => {
         console.error('Webhook error:', error);
         return res.status(500).json({ error: 'Internal server error' });
     }
-};
+}
 
 // Add this helper function at the bottom of the file
 async function formatStatsMessage(stats) {
