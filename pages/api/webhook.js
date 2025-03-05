@@ -4,7 +4,7 @@ const defaultFeature = require('../../features/default');
 const customFeature = require('../../features/custom');
 const bulkFeature = require('../../features/bulk');
 const trackFeature = require('../../features/track');
-const { formatTimeAgo } = require('../features/track');
+const { formatTimeAgo } = require('../../features/track');
 
 // Initialize bot without polling since we're using webhooks
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: false });
@@ -107,45 +107,46 @@ export default async function handler(req, res) {
     console.log('Webhook request received:', {
         timestamp: new Date().toISOString(),
         method: req.method,
-        headers: req.headers,
+        path: req.url,
+        headers: {
+            'content-type': req.headers['content-type'],
+            'x-telegram-bot-api-secret-token': req.headers['x-telegram-bot-api-secret-token']?.substring(0, 8) + '...'
+        },
+        body: JSON.stringify(req.body).substring(0, 200)
     });
 
     if (req.method !== 'POST') {
+        console.error('Invalid method:', req.method);
         return res.status(405).json({ error: 'Method not allowed' });
-    }
-
-    // Validate webhook secret
-    const token = req.headers['x-telegram-bot-api-secret-token'];
-    if (token !== process.env.WEBHOOK_SECRET) {
-        console.error('Invalid webhook secret');
-        return res.status(403).json({ error: 'Unauthorized' });
     }
 
     try {
         const update = req.body;
-        console.log('Update received:', {
-            updateId: update.update_id,
-            messageId: update.message?.message_id,
-            chatId: update.message?.chat?.id,
-            text: update.message?.text
-        });
+        
+        if (!update || typeof update !== 'object') {
+            console.error('Invalid update format:', update);
+            return res.status(400).json({ error: 'Invalid update format' });
+        }
 
-        // Process the update
         const msg = update.message || update.callback_query?.message;
         if (!msg?.chat?.id) {
-            console.error('Invalid message format');
+            console.error('Invalid message format:', msg);
             return res.status(400).json({ error: 'Invalid message format' });
         }
 
-        // Handle the message using your bot instance
         await handleUpdate(update);
-        
         return res.status(200).json({ ok: true });
     } catch (error) {
-        console.error('Webhook error:', error);
-        return res.status(500).json({ error: 'Internal server error' });
+        console.error('Webhook error:', {
+            message: error.message,
+            stack: error.stack
+        });
+        return res.status(500).json({ 
+            error: 'Internal server error',
+            message: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
-};
+}
 
 // Add this helper function at the bottom of the file
 async function formatStatsMessage(stats) {
