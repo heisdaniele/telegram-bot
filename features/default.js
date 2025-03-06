@@ -14,9 +14,7 @@ function debugLog(...args) {
 }
 
 // Update the domain constant
-const DOMAIN = process.env.NODE_ENV === 'production' 
-    ? 'telegram-bot-six-theta.vercel.app'
-    : 'localhost:3000';
+const DOMAIN = process.env.DOMAIN || 'midget.pro';
 const PROTOCOL = 'https';  // Required for Telegram inline buttons
 
 // Add proper error handling and state persistence
@@ -152,7 +150,7 @@ async function handleDefaultShorten(bot, msg) {
             // 4. Generate short alias with proper URL formatting
             const shortAlias = nanoid(6).toLowerCase();
             const shortUrl = `${PROTOCOL}://${DOMAIN}/${shortAlias}`;
-            const displayUrl = `${DOMAIN}/${shortAlias}`;  // For display purposes
+            const displayUrl = `${shortUrl}`;  // Now using full URL for display
 
             // 5. Insert into database with new schema
             const { data, error: insertError } = await supabase
@@ -257,7 +255,7 @@ async function handleListUrls(bot, msg) {
 
         // Format URLs with click statistics
         const urlList = urls.map(url => 
-            `• <code>${DOMAIN}/${url.short_alias}</code>\n` +
+            `• <code>${PROTOCOL}://${DOMAIN}/${url.short_alias}</code>\n` +
             `  ↳ ${escapeHTML(url.original_url)}\n` +
             `  📊 Clicks: ${url.clicks} | Last clicked: ${
                 url.last_clicked ? formatTimeAgo(new Date(url.last_clicked)) : 'Never'
