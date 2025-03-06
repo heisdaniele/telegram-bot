@@ -21,14 +21,33 @@ const bot = new TelegramBot(BOT_TOKEN, {
 async function setupWebhook() {
     try {
         const webhookInfo = await bot.getWebhookInfo();
-        if (webhookInfo.url !== WEBHOOK_URL) {
+        console.log('Current webhook info:', webhookInfo);
+
+        // Only update if webhook URL doesn't match or settings need updating
+        if (webhookInfo.url !== WEBHOOK_URL || 
+            webhookInfo.max_connections !== 100 ||
+            !webhookInfo.allowed_updates?.includes('message')) {
+            
             await bot.deleteWebhook();
+            console.log('✓ Existing webhook deleted');
+
             await bot.setWebHook(WEBHOOK_URL, {
                 max_connections: 100,
                 allowed_updates: ['message', 'callback_query'],
-                secret_token: process.env.WEBHOOK_SECRET
+                secret_token: process.env.WEBHOOK_SECRET,
+                drop_pending_updates: true
             });
-            console.log('✓ Webhook set to:', WEBHOOK_URL);
+            console.log('✓ New webhook set:', {
+                url: WEBHOOK_URL,
+                maxConnections: 100,
+                allowedUpdates: ['message', 'callback_query']
+            });
+
+            // Verify the new webhook
+            const newWebhookInfo = await bot.getWebhookInfo();
+            console.log('✓ Updated webhook info:', newWebhookInfo);
+        } else {
+            console.log('✓ Webhook already properly configured');
         }
     } catch (error) {
         console.error('Webhook setup error:', error);

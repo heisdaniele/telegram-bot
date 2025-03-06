@@ -26,16 +26,18 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
 async function testConnection() {
     try {
         console.log('Testing Supabase connection...');
-        const { data, error } = await supabase.from('urls').select('count', { count: 'exact' });
-        if (error) throw error;
-        console.log('✓ Successfully connected to Supabase');
+        // Test with tg_users table instead of urls
+        const { data, error } = await supabase
+            .from('tg_users')
+            .select('*', { count: 'exact', head: true });
+
+        if (error) {
+            throw error;
+        }
+
         return true;
     } catch (error) {
-        console.error('Supabase connection error:', {
-            message: error.message,
-            code: error.code,
-            details: error.details
-        });
+        console.error('Supabase connection error:', error);
         throw error;
     }
 }
