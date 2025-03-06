@@ -3,11 +3,12 @@
   "version": "1.0.0",
   "main": "bot.js",
   "scripts": {
-    "start": "node bot.js",
+    "start": "next start",
     "redirect": "node redirect-server.js",
-    "dev": "nodemon bot.js",
+    "dev": "next dev",
     "setup-webhook": "node scripts/setup-webhook.js",
-    "check-webhook": "node scripts/check-webhook.js"
+    "check-webhook": "node scripts/check-webhook.js",
+    "build": "next build"
   },
   "keywords": [
     "telegram",
@@ -18,17 +19,18 @@
   "license": "ISC",
   "description": "Telegram URL Shortener Bot with Analytics",
   "dependencies": {
-    "@supabase/supabase-js": "^2.x.x",
+    "@supabase/supabase-js": "^2.39.0",
     "axios": "^1.6.0",
     "concurrently": "^8.2.2",
     "cors": "^2.8.5",
-    "dotenv": "^16.x.x",
+    "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "nanoid": "^3.x.x",
     "node-fetch": "^2.7.0",
     "node-ipinfo": "^3.5.1",
-    "node-telegram-bot-api": "^0.x.x",
-    "validator": "^13.x.x"
+    "node-telegram-bot-api": "^0.64.0",
+    "validator": "^13.x.x",
+    "next": "latest"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

@@ -109,20 +109,21 @@ const handleUpdate = async (update) => {
 };
 
 export default async function handler(req, res) {
-    console.log('Webhook request received:', {
-        timestamp: new Date().toISOString(),
+    console.log('Webhook received:', {
         method: req.method,
         path: req.url,
-        headers: {
-            'content-type': req.headers['content-type'],
-            'x-telegram-bot-api-secret-token': req.headers['x-telegram-bot-api-secret-token']?.substring(0, 8) + '...'
-        },
-        body: JSON.stringify(req.body).substring(0, 200)
+        timestamp: new Date().toISOString()
     });
 
     if (req.method !== 'POST') {
-        console.error('Invalid method:', req.method);
         return res.status(405).json({ error: 'Method not allowed' });
+    }
+
+    // Validate webhook secret
+    const token = req.headers['x-telegram-bot-api-secret-token'];
+    if (!token || token !== process.env.WEBHOOK_SECRET) {
+        console.error('Invalid webhook secret');
+        return res.status(403).json({ error: 'Unauthorized' });
     }
 
     try {
@@ -133,12 +134,6 @@ export default async function handler(req, res) {
             return res.status(400).json({ error: 'Invalid update format' });
         }
 
-        const msg = update.message || update.callback_query?.message;
-        if (!msg?.chat?.id) {
-            console.error('Invalid message format:', msg);
-            return res.status(400).json({ error: 'Invalid message format' });
-        }
-
         await handleUpdate(update);
         return res.status(200).json({ ok: true });
     } catch (error) {
@@ -146,10 +141,8 @@ export default async function handler(req, res) {
             message: error.message,
             stack: error.stack
         });
-        return res.status(500).json({ 
-            error: 'Internal server error',
-            message: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
+        // Always return 200 to Telegram even on errors
+        return res.status(200).json({ ok: true });
     }
 }
 
