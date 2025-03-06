@@ -9,8 +9,11 @@
   "routes": [
     {
       "src": "/api/webhook",
-      "dest": "/api/webhook.js",
-      "methods": ["POST"]
+      "methods": ["POST"],
+      "headers": {
+        "Access-Control-Allow-Origin": "*"
+      },
+      "dest": "/api/webhook.js"
     },
     {
       "src": "/api/health",

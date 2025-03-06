@@ -156,8 +156,37 @@ async function handleUrlShortening(msg) {
     }
 }
 
-// Initialize bot without polling since we're using webhooks
-const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: false });
+// Update constants at the top of the file
+const BOT_DOMAIN = process.env.DOMAIN || 'midget.pro';
+const WEBHOOK_PATH = '/api/webhook';
+const WEBHOOK_URL = `https://${BOT_DOMAIN}${WEBHOOK_PATH}`;
+
+// Initialize bot properly
+const bot = new TelegramBot(process.env.BOT_TOKEN, {
+    polling: false,
+    baseApiUrl: 'https://api.telegram.org',
+    webhookReply: true // Enable direct reply to Telegram
+});
+
+// Ensure webhook is properly set on cold start
+async function ensureWebhook() {
+    try {
+        const webhookInfo = await bot.getWebhookInfo();
+        if (webhookInfo.url !== WEBHOOK_URL) {
+            await bot.setWebHook(WEBHOOK_URL, {
+                max_connections: 100,
+                allowed_updates: ['message', 'callback_query'],
+                secret_token: process.env.WEBHOOK_SECRET
+            });
+            console.log('✓ Webhook set:', WEBHOOK_URL);
+        }
+    } catch (error) {
+        console.error('Webhook setup error:', error);
+    }
+}
+
+// Call ensureWebhook when the handler is initialized
+ensureWebhook().catch(console.error);
 
 // Add security middleware
 const validateWebhook = (req) => {
@@ -198,46 +227,32 @@ function isValidUrl(string) {
 }
 
 export default async function handler(req, res) {
-    if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method not allowed' });
-    }
-
     console.log('Webhook request received:', {
         timestamp: new Date().toISOString(),
-        method: req.method,
         path: req.url,
         headers: {
             'content-type': req.headers['content-type'],
             'x-telegram-bot-api-secret-token': req.headers['x-telegram-bot-api-secret-token']?.substring(0, 8) + '...'
-        },
-        body: JSON.stringify(req.body).substring(0, 200) + '...'
+        }
     });
 
+    if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' });
+    }
+
     // Validate webhook secret
-    const token = req.headers['x-telegram-bot-api-secret-token'];
-    if (!token || token !== process.env.WEBHOOK_SECRET) {
+    if (!validateWebhook(req)) {
         console.error('Invalid webhook secret');
         return res.status(403).json({ error: 'Unauthorized' });
     }
 
     try {
         const update = req.body;
-        
-        // Enhanced validation for update object
-        if (!update || typeof update !== 'object') {
-            console.error('Invalid update format:', update);
-            return res.status(400).json({ error: 'Invalid update format' });
-        }
-
-        // Process the update
         await handleUpdate(update);
-        
-        // Always return 200 to Telegram
         return res.status(200).json({ ok: true });
     } catch (error) {
         console.error('Webhook error:', error);
-        // Still return 200 to Telegram but log the error
-        return res.status(200).json({ ok: true });
+        return res.status(200).json({ ok: true }); // Always return 200 to Telegram
     }
 }
 
