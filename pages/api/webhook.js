@@ -6,6 +6,11 @@ const bulkFeature = require('../../features/bulk');
 const trackFeature = require('../../features/track');
 const { formatTimeAgo } = require('../../features/track');
 
+// Update the domain constant at the top of the file
+const DOMAIN = process.env.NODE_ENV === 'production' 
+    ? 'midget.pro'  // Changed from telegram-bot-six-theta.vercel.app
+    : 'localhost:3000';
+
 // Initialize bot without polling since we're using webhooks
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: false });
 

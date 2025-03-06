@@ -40,7 +40,7 @@ async function startBot() {
                 secret_token: process.env.WEBHOOK_SECRET
             };
             
-            await bot.setWebHook(`https://midget.pro/bot`, webhookOptions);
+            await bot.setWebHook(`${process.env.WEBHOOK_URL}`, webhookOptions);
             const webhookInfo = await bot.getWebhookInfo();
             console.log('✓ Webhook info:', webhookInfo);
         }
