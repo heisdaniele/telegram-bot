@@ -23,6 +23,11 @@
     {
       "src": "/((?!api/).*)",
       "dest": "/api/redirect.js"
+    },
+    {
+      "src": "/bot",
+      "methods": ["POST"],
+      "dest": "/api/webhook"
     }
   ],
   "env": {

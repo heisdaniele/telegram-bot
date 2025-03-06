@@ -6,13 +6,38 @@ const bulkFeature = require('../../features/bulk');
 const trackFeature = require('../../features/track');
 const { formatTimeAgo } = require('../../features/track');
 
-// Update the domain constant at the top of the file
-const DOMAIN = process.env.NODE_ENV === 'production' 
-    ? 'midget.pro'  // Changed from telegram-bot-six-theta.vercel.app
-    : 'localhost:3000';
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const DOMAIN = process.env.DOMAIN || 'midget.pro';
+const WEBHOOK_PATH = '/bot';  // Changed from /api/webhook to match your working URL
+const WEBHOOK_URL = `https://${DOMAIN}${WEBHOOK_PATH}`;
 
-// Initialize bot without polling since we're using webhooks
-const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: false });
+// Initialize bot with proper configuration
+const bot = new TelegramBot(BOT_TOKEN, {
+    polling: false,
+    webhookReply: true
+});
+
+// Add webhook setup function
+async function setupWebhook() {
+    try {
+        const webhookInfo = await bot.getWebhookInfo();
+        if (webhookInfo.url !== WEBHOOK_URL) {
+            await bot.deleteWebhook();
+            await bot.setWebHook(WEBHOOK_URL, {
+                max_connections: 100,
+                allowed_updates: ['message', 'callback_query'],
+                secret_token: process.env.WEBHOOK_SECRET
+            });
+            console.log('✓ Webhook set to:', WEBHOOK_URL);
+        }
+    } catch (error) {
+        console.error('Webhook setup error:', error);
+        throw error;
+    }
+}
+
+// Call setupWebhook on cold start
+setupWebhook().catch(console.error);
 
 // Add security middleware
 const validateWebhook = (req) => {
