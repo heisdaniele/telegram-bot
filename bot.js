@@ -32,17 +32,42 @@ async function startBot() {
         });
         console.log('🤖 Bot is running...');
 
-        // Set webhook only in production
+        // Update the webhook configuration
         if (process.env.NODE_ENV === 'production') {
+            const webhookUrl = process.env.WEBHOOK_URL;  // Use WEBHOOK_URL directly
             const webhookOptions = {
                 max_connections: 100,
                 allowed_updates: ['message', 'callback_query'],
-                secret_token: process.env.WEBHOOK_SECRET
+                secret_token: process.env.WEBHOOK_SECRET,
+                drop_pending_updates: true
             };
             
-            await bot.setWebHook(`${process.env.WEBHOOK_URL}`, webhookOptions);
-            const webhookInfo = await bot.getWebhookInfo();
-            console.log('✓ Webhook info:', webhookInfo);
+            try {
+                // Clear any existing webhook
+                await bot.deleteWebhook();
+                console.log('✓ Existing webhook deleted');
+
+                // Set new webhook
+                await bot.setWebHook(webhookUrl, webhookOptions);
+                console.log('✓ New webhook set:', webhookUrl);
+
+                // Verify webhook info
+                const webhookInfo = await bot.getWebhookInfo();
+                console.log('✓ Webhook verification:', {
+                    url: webhookInfo.url,
+                    pending_update_count: webhookInfo.pending_update_count,
+                    max_connections: webhookInfo.max_connections,
+                    last_error_date: webhookInfo.last_error_date,
+                    last_error_message: webhookInfo.last_error_message
+                });
+
+                if (webhookInfo.url !== webhookUrl) {
+                    throw new Error(`Webhook URL mismatch. Expected: ${webhookUrl}, Got: ${webhookInfo.url}`);
+                }
+            } catch (error) {
+                console.error('Webhook setup error:', error);
+                throw error;
+            }
         }
 
         // Error handling
