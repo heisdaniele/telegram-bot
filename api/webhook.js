@@ -129,31 +129,6 @@ const handleUpdate = async (update) => {
             ).catch(console.error);
         }
     }
-};
-
-// Add this helper function for URL shortening
-async function handleUrlShortening(msg) {
-    const chatId = msg.chat.id;
-    const url = msg.text;
-
-    if (!isValidUrl(url)) {
-        await bot.sendMessage(chatId,
-            '❌ Please send a valid URL.',
-            { parse_mode: 'Markdown' }
-        );
-        return;
-    }
-
-    try {
-        const shortUrl = await defaultFeature.handleDefaultShorten(bot, msg);
-        defaultFeature.setUserState(chatId, null);
-    } catch (error) {
-        console.error('URL shortening error:', error);
-        await bot.sendMessage(chatId,
-            '❌ Failed to shorten URL. Please try again.',
-            { parse_mode: 'Markdown' }
-        );
-    }
 }
 
 // Update constants at the top of the file
@@ -296,23 +271,35 @@ async function formatStatsMessage(stats) {
 
 async function performUrlLookup(alias) {
     try {
-        const { data, error } = await supabase
-            .from('urls')
+        // First check main_urls table
+        const { data: mainUrl, error: mainError } = await supabase
+            .from('main_urls')
             .select('*')
-            .eq('alias', alias)
+            .eq('short_url', alias)
             .single();
 
-        if (error) {
-            if (error.code === 'PGRST116') {
-                // No results found
-                return null;
-            }
-            throw error;
+        if (mainError && mainError.code !== 'PGRST116') {
+            throw mainError;
         }
 
-        return data;
+        if (mainUrl) {
+            return mainUrl;
+        }
+
+        // If not found in main_urls, check tg_shortened_urls
+        const { data: tgUrl, error: tgError } = await supabase
+            .from('tg_shortened_urls')
+            .select('*')
+            .eq('short_alias', alias)
+            .single();
+
+        if (tgError && tgError.code !== 'PGRST116') {
+            throw tgError;
+        }
+
+        return tgUrl;
     } catch (error) {
-        console.error('Supabase lookup error:', {
+        console.error('URL lookup error:', {
             error,
             alias,
             timestamp: new Date().toISOString()

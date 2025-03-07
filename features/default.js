@@ -137,7 +137,7 @@ async function handleDefaultShorten(bot, msg) {
                 return;
             }
 
-            // 3. Ensure user exists in tg_users
+            // Ensure user exists in tg_users
             const userExists = await ensureUserExists(msg.from);
             if (!userExists) {
                 console.error('Failed to ensure user exists for Telegram ID:', msg.from.id);
@@ -147,31 +147,42 @@ async function handleDefaultShorten(bot, msg) {
                 );
             }
 
-            // 4. Generate short alias with proper URL formatting
+            // Generate short alias
             const shortAlias = nanoid(6).toLowerCase();
             const shortUrl = `${PROTOCOL}://${DOMAIN}/${shortAlias}`;
-            const displayUrl = `${shortUrl}`;  // Now using full URL for display
 
-            // 5. Insert into database with new schema
-            const { data, error: insertError } = await supabase
-              .from('tg_shortened_urls')
-              .insert({
-                user_id: msg.from.id,
-                original_url: formattedUrl,
-                short_alias: shortAlias,
-                created_at: new Date().toISOString(),
-                clicks: 0, // Initialize clicks counter
-                last_clicked: null // Initialize last_clicked timestamp
-              })
-              .select()
-              .single();
+            // First, insert into main_urls using the create_main_link function
+            const { data: mainUrlData, error: mainUrlError } = await supabase
+                .rpc('create_main_link', {
+                    p_alias: shortAlias,
+                    p_original_url: formattedUrl
+                });
 
-            if (insertError) {
-              console.error('Database insertion error:', insertError);
-              throw new Error('Failed to save URL');
+            if (mainUrlError) {
+                console.error('Error creating main URL:', mainUrlError);
+                throw new Error('Failed to create main URL');
             }
 
-            // 6. Construct success message
+            // Then, insert into tg_shortened_urls
+            const { data: tgUrlData, error: tgUrlError } = await supabase
+                .from('tg_shortened_urls')
+                .insert({
+                    user_id: msg.from.id,
+                    original_url: formattedUrl,
+                    short_alias: shortAlias,
+                    created_at: new Date().toISOString(),
+                    clicks: 0,
+                    last_clicked: null
+                })
+                .select()
+                .single();
+
+            if (tgUrlError) {
+                console.error('Error creating Telegram URL:', tgUrlError);
+                throw new Error('Failed to create Telegram URL');
+            }
+
+            // Construct success message
             const response = `
 ✅ *URL Shortened Successfully!*
 
@@ -179,38 +190,41 @@ async function handleDefaultShorten(bot, msg) {
 \`${formattedUrl}\`
 
 ✨ *Short URL:*
-\`${displayUrl}\`
+\`${shortUrl}\`
 
 📊 Use \`/track ${shortAlias}\` to view statistics`;
 
-            // 7. Send message with working inline buttons
+            // Send message with working inline buttons
             await bot.sendMessage(chatId, response, {
-              parse_mode: 'Markdown',
-              disable_web_page_preview: true,
-              reply_markup: {
-                inline_keyboard: [[
-                  {
-                    text: '🔗 Copy URL',
-                    callback_data: `copy_${shortAlias}`
-                  },
-                  {
-                    text: '📊 Track',
-                    callback_data: `track_${shortAlias}`
-                  }
-                ]]
-              }
+                parse_mode: 'Markdown',
+                disable_web_page_preview: true,
+                reply_markup: {
+                    inline_keyboard: [[
+                        {
+                            text: '🔗 Copy URL',
+                            callback_data: `copy_${shortAlias}`
+                        },
+                        {
+                            text: '📊 Track',
+                            callback_data: `track_${shortAlias}`
+                        }
+                    ]]
+                }
             });
 
-            console.log(`URL shortened: ${displayUrl} (user: ${msg.from.id})`);
+            console.log(`URL shortened: ${shortUrl} (user: ${msg.from.id})`);
         }
 
     } catch (error) {
         console.error('Error in handleDefaultShorten:', error);
         setUserState(chatId, null); // Reset state on error
-        await bot.sendMessage(chatId,
-            '❌ An error occurred. Please try again.',
-            { parse_mode: 'Markdown' }
-        ).catch(console.error);
+        
+        const errorMessage = error.message.includes('duplicate_alias') 
+            ? '❌ This short URL is already taken. Please try again.'
+            : '❌ An error occurred. Please try again.';
+            
+        await bot.sendMessage(chatId, errorMessage, { parse_mode: 'Markdown' })
+            .catch(console.error);
     }
 }
 
@@ -249,7 +263,7 @@ async function handleListUrls(bot, msg) {
         const escapeHTML = (text) => {
             return text
                 .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
+                .replace(/<//g, '&lt;')
                 .replace(/>/g, '&gt;');
         };
 

@@ -19,18 +19,18 @@
   "license": "ISC",
   "description": "Telegram URL Shortener Bot with Analytics",
   "dependencies": {
-    "@supabase/supabase-js": "^2.39.0",
+    "@supabase/supabase-js": "^2.49.1",
     "axios": "^1.6.0",
     "concurrently": "^8.2.2",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "nanoid": "^3.x.x",
+    "next": "latest",
     "node-fetch": "^2.7.0",
     "node-ipinfo": "^3.5.1",
     "node-telegram-bot-api": "^0.64.0",
-    "validator": "^13.x.x",
-    "next": "latest"
+    "validator": "^13.x.x"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
