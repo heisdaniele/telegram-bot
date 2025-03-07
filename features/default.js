@@ -160,10 +160,10 @@ async function handleDefaultShorten(bot, msg) {
 
             if (mainUrlError) {
                 console.error('Error creating main URL:', mainUrlError);
-                throw new Error('Failed to create main URL');
+                throw new Error(`Failed to create main URL: ${mainUrlError.message}`);
             }
 
-            // Then, insert into tg_shortened_urls
+            // Then, insert into tg_shortened_urls with the main_url_id
             const { data: tgUrlData, error: tgUrlError } = await supabase
                 .from('tg_shortened_urls')
                 .insert({
@@ -172,7 +172,8 @@ async function handleDefaultShorten(bot, msg) {
                     short_alias: shortAlias,
                     created_at: new Date().toISOString(),
                     clicks: 0,
-                    last_clicked: null
+                    last_clicked: null,
+                    main_url_id: mainUrlData?.[0]?.main_id  // Reference the main_id from mainUrlData
                 })
                 .select()
                 .single();
