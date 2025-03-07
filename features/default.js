@@ -163,6 +163,10 @@ async function handleDefaultShorten(bot, msg) {
                 throw new Error(`Failed to create main URL: ${mainUrlError.message}`);
             }
 
+            if (!mainUrlData || !mainUrlData[0]?.main_id) {
+                throw new Error('No main URL ID returned');
+            }
+
             // Then, insert into tg_shortened_urls with the main_url_id
             const { data: tgUrlData, error: tgUrlError } = await supabase
                 .from('tg_shortened_urls')
@@ -173,13 +177,18 @@ async function handleDefaultShorten(bot, msg) {
                     created_at: new Date().toISOString(),
                     clicks: 0,
                     last_clicked: null,
-                    main_url_id: mainUrlData?.[0]?.main_id  // Reference the main_id from mainUrlData
+                    main_url_id: mainUrlData[0].main_id  // Reference the main_id from mainUrlData
                 })
                 .select()
                 .single();
 
             if (tgUrlError) {
                 console.error('Error creating Telegram URL:', tgUrlError);
+                // Rollback main_url entry if tg_url creation fails
+                await supabase
+                    .from('main_urls')
+                    .delete()
+                    .eq('id', mainUrlData[0].main_id);
                 throw new Error('Failed to create Telegram URL');
             }
 
