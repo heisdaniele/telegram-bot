@@ -3,21 +3,28 @@ require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 
 // Validate environment variables
-if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) {
-    console.error('Missing Supabase credentials:', {
-        url: !!process.env.SUPABASE_URL,
-        key: !!process.env.SUPABASE_KEY
-    });
-    throw new Error('Missing required Supabase environment variables');
+const requiredEnvVars = {
+    SUPABASE_URL: process.env.SUPABASE_URL,
+    SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
+    BOT_TOKEN: process.env.BOT_TOKEN
+};
+
+const missingVars = Object.entries(requiredEnvVars)
+    .filter(([key, value]) => !value)
+    .map(([key]) => key);
+
+if (missingVars.length > 0) {
+    throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
 }
 
 // Initialize Supabase client
 const supabase = createClient(
     process.env.SUPABASE_URL,
-    process.env.SUPABASE_KEY,
+    process.env.SUPABASE_ANON_KEY,
     {
         auth: {
-            persistSession: false
+            persistSession: false,
+            autoRefreshToken: false
         }
     }
 );
