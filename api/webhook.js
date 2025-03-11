@@ -95,32 +95,16 @@ async function handleUpdate(update) {
                 await customFeature.handleCustomStart(bot, msg);
                 break;
 
-            case '📊 Track URL':
-                await bot.sendMessage(chatId,
-                    '*URL Tracking*\n\n' +
-                    'Send the alias of the URL you want to track:\n' +
-                    'Example: `/track your-alias`',
-                    { parse_mode: 'Markdown' }
-                );
-                break;
-
-            case 'ℹ️ Help':
-                await bot.sendMessage(chatId,
-                    '*Available Commands:*\n\n' +
-                    '🔗 Quick Shorten - Simple URL shortening\n' +
-                    '📚 Bulk Shorten - Multiple URLs at once\n' +
-                    '🎯 Custom Alias - Choose your own alias\n' +
-                    '📊 Track URL - View URL statistics\n' +
-                    '📋 My URLs - List your shortened URLs',
-                    { parse_mode: 'Markdown' }
-                );
-                break;
-
             default:
-                // Handle URL input if we're waiting for it
-                const userState = defaultFeature.getUserState(chatId);
+                // Handle custom input states
+                const userState = defaultFeature.getUserState(chatId) || 
+                                 customFeature.getUserState(chatId);
+
                 if (userState === 'WAITING_FOR_URL') {
                     await defaultFeature.handleDefaultShorten(bot, msg);
+                } else if (userState === 'WAITING_FOR_CUSTOM_URL' || 
+                           userState === 'WAITING_FOR_ALIAS') {
+                    await customFeature.handleCustomInput(bot, msg);
                 } else if (text.startsWith('/track ')) {
                     await trackFeature.handleTrackCommand(bot, msg);
                 }
