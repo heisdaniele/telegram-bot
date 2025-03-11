@@ -173,47 +173,52 @@ async function getUrlStats(shortAlias) {
             throw new Error('IGNORED_PATH');
         }
 
-        // Get URL data with main_url_id
-        const { data: urlData, error: urlError } = await supabase
+        // First try to find the URL in main_urls
+        const { data: mainUrl, error: mainUrlError } = await supabase
+            .from('main_urls')
+            .select('id, short_url, created_at')
+            .eq('short_url', shortAlias)
+            .single();
+
+        // Then get the associated telegram URL if it exists
+        const { data: tgUrl, error: tgUrlError } = await supabase
             .from('tg_shortened_urls')
             .select(`
-                *,
+                id,
+                user_id,
+                short_alias,
+                created_at,
                 tg_users (
                     username,
                     first_name
-                ),
-                main_urls (
-                    id
                 )
             `)
             .eq('short_alias', shortAlias)
             .single();
 
-        if (urlError) {
-            if (urlError.code === 'PGRST116') {
-                throw new Error('URL_NOT_FOUND');
-            }
-            throw urlError;
+        if (!mainUrl && !tgUrl) {
+            throw new Error('URL_NOT_FOUND');
         }
 
         // Get click events from both tables
         const [mainClicks, tgClicks] = await Promise.all([
-            supabase
+            mainUrl ? supabase
                 .from('click_events')
                 .select('*')
-                .eq('url_id', urlData.main_url_id)
-                .order('created_at', { ascending: false }),
-            supabase
+                .eq('url_id', mainUrl.id)
+                .order('created_at', { ascending: false }) : { data: [] },
+            tgUrl ? supabase
                 .from('tg_click_events')
                 .select('*')
-                .eq('tg_url_id', urlData.id)
-                .order('created_at', { ascending: false })
+                .eq('tg_url_id', tgUrl.id)
+                .order('created_at', { ascending: false }) : { data: [] }
         ]);
 
-        // Combine and deduplicate clicks based on timestamp and IP
-        const allClicks = [...(mainClicks.data || []), ...(tgClicks.data || [])].sort(
-            (a, b) => new Date(b.created_at) - new Date(a.created_at)
-        );
+        // Combine and deduplicate clicks
+        const allClicks = [
+            ...(mainClicks.data || []),
+            ...(tgClicks.data || [])
+        ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
         // Calculate stats
         const uniqueIPs = new Set(allClicks.map(click => click.ip_address));
@@ -224,19 +229,21 @@ async function getUrlStats(shortAlias) {
             devices: {},
             locations: {},
             lastClicked: allClicks[0]?.created_at || null,
-            created: urlData.created_at,
+            created: mainUrl?.created_at || tgUrl?.created_at,
             recentClicks: allClicks.slice(0, 5).map(click => ({
                 location: click.location,
                 device: click.device || click.device_type,
-                time: formatTimeAgo(click.created_at)
+                time: formatTimeAgo(new Date(click.created_at))
             }))
         };
 
         // Calculate distributions
         allClicks.forEach(click => {
             const device = click.device || click.device_type;
+            const location = click.location || 'Unknown';
+            
             stats.devices[device] = (stats.devices[device] || 0) + 1;
-            stats.locations[click.location] = (stats.locations[click.location] || 0) + 1;
+            stats.locations[location] = (stats.locations[location] || 0) + 1;
         });
 
         return stats;
@@ -248,7 +255,6 @@ async function getUrlStats(shortAlias) {
             timestamp: new Date().toISOString()
         });
 
-        // Return structured error response
         if (error.message === 'IGNORED_PATH') {
             return { error: 'IGNORED_PATH' };
         }
