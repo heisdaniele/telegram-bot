@@ -151,11 +151,12 @@ async function handleDefaultShorten(bot, msg) {
             const shortAlias = nanoid(6).toLowerCase();
             const shortUrl = `${PROTOCOL}://${DOMAIN}/${shortAlias}`;
 
-            // First, insert into main_urls using the create_main_link function
+            // First, insert into main_urls using the updated create_main_link function
             const { data: mainUrlData, error: mainUrlError } = await supabase
                 .rpc('create_main_link', {
                     p_alias: shortAlias,
-                    p_original_url: formattedUrl
+                    p_original_url: formattedUrl,
+                    p_is_custom: false
                 });
 
             if (mainUrlError) {
@@ -163,11 +164,11 @@ async function handleDefaultShorten(bot, msg) {
                 throw new Error(`Failed to create main URL: ${mainUrlError.message}`);
             }
 
-            if (!mainUrlData || !mainUrlData[0]?.main_id) {
-                throw new Error('No main URL ID returned');
+            if (!mainUrlData || !mainUrlData[0]) {
+                throw new Error('No main URL data returned');
             }
 
-            // Then, insert into tg_shortened_urls with the main_url_id
+            // Then, insert into tg_shortened_urls
             const { data: tgUrlData, error: tgUrlError } = await supabase
                 .from('tg_shortened_urls')
                 .insert({
@@ -177,7 +178,7 @@ async function handleDefaultShorten(bot, msg) {
                     created_at: new Date().toISOString(),
                     clicks: 0,
                     last_clicked: null,
-                    main_url_id: mainUrlData[0].main_id  // Reference the main_id from mainUrlData
+                    main_url_id: mainUrlData[0].id  // Use the id from mainUrlData
                 })
                 .select()
                 .single();
@@ -188,11 +189,11 @@ async function handleDefaultShorten(bot, msg) {
                 await supabase
                     .from('main_urls')
                     .delete()
-                    .eq('id', mainUrlData[0].main_id);
+                    .eq('id', mainUrlData[0].id);
                 throw new Error('Failed to create Telegram URL');
             }
 
-            // Construct success message
+            // Construct success message with is_custom flag info
             const response = `
 ✅ *URL Shortened Successfully!*
 
@@ -200,7 +201,7 @@ async function handleDefaultShorten(bot, msg) {
 \`${formattedUrl}\`
 
 ✨ *Short URL:*
-\`${shortUrl}\`
+\`${shortUrl}\`${mainUrlData[0].is_custom ? ' _(Custom)_' : ''}
 
 📊 Use \`/track ${shortAlias}\` to view statistics`;
 
