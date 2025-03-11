@@ -35,6 +35,29 @@ const bulkFeature = require('../features/bulk');
 const trackFeature = require('../features/track');
 const { formatTimeAgo } = require('../features/track');
 
+async function handleUpdate(update) {
+    try {
+        // Handle callback queries
+        if (update.callback_query) {
+            return handleCallback(update.callback_query);
+        }
+
+        // Handle messages
+        const msg = update.message;
+        if (!msg || !msg.chat) {
+            console.error('Invalid message format:', update);
+            return;
+        }
+
+        const chatId = msg.chat.id;
+        const text = msg.text;
+
+        // Rest of your handling code...
+    } catch (error) {
+        console.error('Error in handleUpdate:', error);
+    }
+}
+
 const handleUpdate = async (update) => {
     try {
         const msg = update.message || update.callback_query?.message;

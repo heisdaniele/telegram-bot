@@ -27,8 +27,15 @@ function getTempUrl(chatId) {
     return tempUrls.get(chatId.toString());
 }
 
-async function handleCustomStart(bot, chatId) {
-    setUserState(chatId, { step: 'waiting_for_url' });
+async function handleCustomStart(bot, msg) {
+    if (!msg || !msg.chat) {
+        console.error('Invalid message format:', msg);
+        return;
+    }
+    
+    const chatId = msg.chat.id;
+    setUserState(chatId, 'WAITING_FOR_CUSTOM_URL');
+    
     await bot.sendMessage(chatId,
         '🎯 *Custom URL Shortener*\n\n' +
         'Please send the URL you want to shorten:',
@@ -73,7 +80,6 @@ async function handleCustomInput(bot, msg) {
     if (state === 'WAITING_FOR_ALIAS') {
         const alias = text;
         
-        // Validate alias format
         if (!/^[a-zA-Z0-9-]{3,20}$/.test(alias)) {
             await bot.sendMessage(chatId,
                 '❌ Invalid alias format.\n\n' +
@@ -92,43 +98,56 @@ async function handleCustomInput(bot, msg) {
                 throw new Error('No URL found');
             }
 
-            // Check if alias is available
-            const { data: existing } = await supabase
-                .from('tg_shortened_urls')
-                .select('id')
-                .eq('short_alias', alias)
-                .single();
+            // First create in main_urls using RPC function
+            const { data: mainUrlData, error: mainUrlError } = await supabase
+                .rpc('create_main_link', {
+                    p_alias: alias,
+                    p_original_url: url,
+                    p_is_custom: true
+                });
 
-            if (existing) {
-                await bot.sendMessage(chatId,
-                    '❌ This alias is already taken.\nPlease try a different one:',
-                    { parse_mode: 'Markdown' }
-                );
-                return;
+            if (mainUrlError) {
+                if (mainUrlError.message.includes('duplicate_alias')) {
+                    await bot.sendMessage(chatId,
+                        '❌ This alias is already taken.\nPlease try a different one:',
+                        { parse_mode: 'Markdown' }
+                    );
+                    return;
+                }
+                throw mainUrlError;
             }
 
-            // Create shortened URL with custom alias
-            const { error: insertError } = await supabase
+            // Then create in tg_shortened_urls
+            const { error: tgUrlError } = await supabase
                 .from('tg_shortened_urls')
                 .insert({
                     user_id: msg.from.id,
                     original_url: url,
                     short_alias: alias,
                     created_at: new Date().toISOString(),
-                    clicks: 0
+                    clicks: 0,
+                    main_url_id: mainUrlData[0].id
                 });
 
-            if (insertError) throw insertError;
+            if (tgUrlError) {
+                // Rollback main_urls entry if tg_urls creation fails
+                await supabase
+                    .from('main_urls')
+                    .delete()
+                    .eq('id', mainUrlData[0].id);
+                throw tgUrlError;
+            }
 
             // Clear states
             setUserState(chatId, null);
             tempUrls.delete(chatId.toString());
 
-            // Send success message
+            const shortUrl = `${PROTOCOL}://${DOMAIN}/${alias}`;
+            
             await bot.sendMessage(chatId,
-                `✅ *URL Shortened Successfully!*\n\n` +
+                `✅ *Custom URL Created Successfully!*\n\n` +
                 `🔗 *Original URL:*\n\`${url}\`\n\n` +
-                `✨ *Short URL:*\n\`${DOMAIN}/${alias}\`\n\n` +
+                `✨ *Custom Short URL:*\n\`${shortUrl}\`\n\n` +
                 `📊 Use \`/track ${alias}\` to view statistics`,
                 {
                     parse_mode: 'Markdown',
@@ -147,6 +166,7 @@ async function handleCustomInput(bot, msg) {
                     }
                 }
             );
+
         } catch (error) {
             console.error('Custom alias error:', error);
             await bot.sendMessage(chatId,
