@@ -7,6 +7,12 @@ const { IPinfoWrapper } = require('node-ipinfo');
 
 const IGNORED_PATHS = new Set(['favicon.ico', 'favicon.png', 'robots.txt']);
 
+// Add the isIgnoredPath function definition before it's used
+function isIgnoredPath(path) {
+    if (!path) return false;
+    return IGNORED_PATHS.has(path.toLowerCase());
+}
+
 const ipinfo = new IPinfoWrapper(process.env.IPINFO_TOKEN);
 
 // Cache for IP locations to reduce API calls
@@ -414,6 +420,6 @@ module.exports = {
     getUrlStats,
     handleTrackCommand,
     handleListUrls,
-    formatTimeAgo,  // Add this line
-    isIgnoredPath
+    formatTimeAgo,
+    isIgnoredPath  // Add this to exports
 };
