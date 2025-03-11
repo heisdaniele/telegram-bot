@@ -66,44 +66,49 @@ async function trackClick(req, urlData) {
 
         const userAgent = req.headers['user-agent'];
         const device = getDeviceType(userAgent);
-        const browser = getBrowserInfo(userAgent);
 
         // Get location asynchronously
-        const locationPromise = getLocationInfo(ipAddress);
+        const location = await getLocationInfo(ipAddress);
 
-        // Wait for location info with timeout
-        const location = await Promise.race([
-            locationPromise,
-            new Promise(resolve => setTimeout(() => resolve('Unknown'), 3000))
-        ]);
+        // Insert into main click_events table
+        const { error: mainClickError } = await supabase
+            .from('click_events')
+            .insert({
+                url_id: urlData.main_url_id, // Use the main_url_id
+                ip_address: ipAddress,
+                device: device,
+                location: location
+            });
 
-        // Insert click event - now includes user_id
-        const clickData = {
-            url_id: urlData.id,
-            user_id: urlData.user_id, // Add user_id from urlData
-            ip_address: ipAddress,
-            user_agent: userAgent,
-            device_type: device, // Changed from 'device' to 'device_type' to match schema
-            location: location,
-            created_at: new Date().toISOString()
-        };
+        if (mainClickError) {
+            console.error('Error recording main click:', mainClickError);
+        }
 
-        // Insert into tg_click_events
-        // No need to manually update clicks/last_clicked as trigger handles it
-        const { error: clickError } = await serviceRole
+        // Also insert into tg_click_events for backward compatibility
+        const { error: tgClickError } = await supabase
             .from('tg_click_events')
-            .insert(clickData);
+            .insert({
+                tg_url_id: urlData.id,
+                ip_address: ipAddress,
+                device_type: device,
+                location: location,
+                user_agent: userAgent,
+                created_at: new Date().toISOString()
+            });
 
-        if (clickError) {
-            throw clickError;
+        if (tgClickError) {
+            console.error('Error recording TG click:', tgClickError);
         }
 
         return { 
             success: true, 
             location,
             device,
-            browser,
-            clickData 
+            clickData: {
+                ip_address: ipAddress,
+                device,
+                location
+            }
         };
 
     } catch (error) {
@@ -155,60 +160,64 @@ function formatTimeAgo(dateString) {
 
 async function getUrlStats(shortAlias) {
     try {
-        // Get URL data
-        const { data: urlData, error: urlError } = await serviceRole
+        // Get URL data with main_url_id
+        const { data: urlData, error: urlError } = await supabase
             .from('tg_shortened_urls')
             .select(`
                 *,
                 tg_users (
                     username,
                     first_name
+                ),
+                main_urls (
+                    id
                 )
             `)
             .eq('short_alias', shortAlias)
             .single();
 
-        if (urlError) {
-            console.error('URL lookup error:', urlError);
-            throw urlError;
-        }
+        if (urlError) throw urlError;
 
-        // Get click events
-        const { data: clickEvents, error: clickError } = await serviceRole
-            .from('tg_click_events')
-            .select('*')
-            .eq('url_id', urlData.id)
-            .order('created_at', { ascending: false });
+        // Get click events from both tables
+        const [mainClicks, tgClicks] = await Promise.all([
+            supabase
+                .from('click_events')
+                .select('*')
+                .eq('url_id', urlData.main_url_id)
+                .order('created_at', { ascending: false }),
+            supabase
+                .from('tg_click_events')
+                .select('*')
+                .eq('tg_url_id', urlData.id)
+                .order('created_at', { ascending: false })
+        ]);
 
-        if (clickError) {
-            console.error('Click events lookup error:', clickError);
-            throw clickError;
-        }
+        // Combine and deduplicate clicks based on timestamp and IP
+        const allClicks = [...(mainClicks.data || []), ...(tgClicks.data || [])].sort(
+            (a, b) => new Date(b.created_at) - new Date(a.created_at)
+        );
 
         // Calculate stats
-        const uniqueIPs = new Set(clickEvents.map(click => click.ip_address));
-        
+        const uniqueIPs = new Set(allClicks.map(click => click.ip_address));
         const stats = {
-            totalClicks: urlData.clicks, // Use the clicks from shortened_urls
+            totalClicks: allClicks.length,
             uniqueClicks: uniqueIPs.size,
             browsers: {},
             devices: {},
             locations: {},
-            lastClicked: urlData.last_clicked, // Use last_clicked from shortened_urls
+            lastClicked: allClicks[0]?.created_at || null,
             created: urlData.created_at,
-            recentClicks: clickEvents.slice(0, 5).map(click => ({
+            recentClicks: allClicks.slice(0, 5).map(click => ({
                 location: click.location,
-                device: click.device_type,
-                browser: getBrowserInfo(click.user_agent),
+                device: click.device || click.device_type,
                 time: formatTimeAgo(click.created_at)
             }))
         };
 
         // Calculate distributions
-        clickEvents.forEach(click => {
-            const browser = getBrowserInfo(click.user_agent);
-            stats.browsers[browser] = (stats.browsers[browser] || 0) + 1;
-            stats.devices[click.device_type] = (stats.devices[click.device_type] || 0) + 1;
+        allClicks.forEach(click => {
+            const device = click.device || click.device_type;
+            stats.devices[device] = (stats.devices[device] || 0) + 1;
             stats.locations[click.location] = (stats.locations[click.location] || 0) + 1;
         });
 
