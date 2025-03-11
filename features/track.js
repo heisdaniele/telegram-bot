@@ -5,6 +5,8 @@ const { IPinfoWrapper } = require('node-ipinfo');
 // or if that doesn't work, try:
 // const IPinfoWrapper = require('node-ipinfo').default;
 
+const IGNORED_PATHS = new Set(['favicon.ico', 'favicon.png', 'robots.txt']);
+
 const ipinfo = new IPinfoWrapper(process.env.IPINFO_TOKEN);
 
 // Cache for IP locations to reduce API calls
@@ -160,6 +162,11 @@ function formatTimeAgo(dateString) {
 
 async function getUrlStats(shortAlias) {
     try {
+        // Early return for ignored paths
+        if (isIgnoredPath(shortAlias)) {
+            throw new Error('IGNORED_PATH');
+        }
+
         // Get URL data with main_url_id
         const { data: urlData, error: urlError } = await supabase
             .from('tg_shortened_urls')
@@ -176,7 +183,12 @@ async function getUrlStats(shortAlias) {
             .eq('short_alias', shortAlias)
             .single();
 
-        if (urlError) throw urlError;
+        if (urlError) {
+            if (urlError.code === 'PGRST116') {
+                throw new Error('URL_NOT_FOUND');
+            }
+            throw urlError;
+        }
 
         // Get click events from both tables
         const [mainClicks, tgClicks] = await Promise.all([
@@ -224,8 +236,21 @@ async function getUrlStats(shortAlias) {
         return stats;
 
     } catch (error) {
-        console.error('Error getting URL stats:', error);
-        throw error;
+        console.error('URL lookup failed:', {
+            error: error.message || error,
+            shortAlias,
+            timestamp: new Date().toISOString()
+        });
+
+        // Return structured error response
+        if (error.message === 'IGNORED_PATH') {
+            return { error: 'IGNORED_PATH' };
+        }
+        if (error.message === 'URL_NOT_FOUND') {
+            return { error: 'URL_NOT_FOUND' };
+        }
+        
+        return { error: 'INTERNAL_ERROR' };
     }
 }
 
@@ -254,31 +279,48 @@ async function handleTrackCommand(bot, msg) {
 
     try {
         const shortAlias = parts[1];
-        const stats = await getUrlStats(shortAlias);
+        const result = await getUrlStats(shortAlias);
+
+        if (result.error) {
+            switch (result.error) {
+                case 'IGNORED_PATH':
+                    return bot.sendMessage(chatId,
+                        '❌ This is a system path and cannot be tracked.',
+                        { parse_mode: 'Markdown' }
+                    );
+                case 'URL_NOT_FOUND':
+                    return bot.sendMessage(chatId,
+                        '❌ URL not found. Please check the alias and try again.',
+                        { parse_mode: 'Markdown' }
+                    );
+                default:
+                    throw new Error('Internal tracking error');
+            }
+        }
 
         // Format browser and device statistics
-        const browserStats = Object.entries(stats.browsers)
+        const browserStats = Object.entries(result.browsers)
             .map(([browser, count]) => 
-                `   • ${browser}: ${count} (${Math.round(count/stats.totalClicks*100)}%)`
+                `   • ${browser}: ${count} (${Math.round(count/result.totalClicks*100)}%)`
             ).join('\n');
 
-        const deviceStats = Object.entries(stats.devices)
+        const deviceStats = Object.entries(result.devices)
             .map(([device, count]) => 
-                `   • ${device}: ${count} (${Math.round(count/stats.totalClicks*100)}%)`
+                `   • ${device}: ${count} (${Math.round(count/result.totalClicks*100)}%)`
             ).join('\n');
 
         // Build statistics message
         const statsMessage = [
             `📊 *URL Statistics for ${shortAlias}*\n`,
             '🔢 *Clicks:*',
-            `   • Total: ${stats.totalClicks}`,
-            `   • Unique: ${stats.uniqueClicks}\n`,
+            `   • Total: ${result.totalClicks}`,
+            `   • Unique: ${result.uniqueClicks}\n`,
             '🌐 *Browsers:*',
             browserStats,
             '\n📱 *Devices:*',
             deviceStats,
-            `\n⏰ *Last Clicked:* ${stats.lastClicked ? formatTimeAgo(stats.lastClicked) : 'Never'}`,
-            `🗓 *Created:* ${formatTimeAgo(stats.created)}`
+            `\n⏰ *Last Clicked:* ${result.lastClicked ? formatTimeAgo(result.lastClicked) : 'Never'}`,
+            `🗓 *Created:* ${formatTimeAgo(result.created)}`
         ].join('\n');
 
         await bot.sendMessage(msg.chat.id, statsMessage, {
@@ -295,7 +337,7 @@ async function handleTrackCommand(bot, msg) {
 
     } catch (error) {
         console.error('Track command error:', error);
-        await bot.sendMessage(msg.chat.id,
+        await bot.sendMessage(chatId,
             '❌ Failed to get URL statistics. Please try again.',
             { parse_mode: 'Markdown' }
         );
@@ -372,5 +414,6 @@ module.exports = {
     getUrlStats,
     handleTrackCommand,
     handleListUrls,
-    formatTimeAgo  // Add this line
+    formatTimeAgo,  // Add this line
+    isIgnoredPath
 };
